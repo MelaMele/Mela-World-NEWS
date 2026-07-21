@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 # --- CONFIGURATION ---
 # የቴሌግራም ቦት ቶከን እና የቻናል ስም ወይም ID እዚህ ያስገቡ
 TELEGRAM_BOT_TOKEN = "8870500617:AAGq_oPWR4rA9mLRVYV3pUPkf-TvEKnWy-E"
-TELEGRAM_CHANNEL_ID = "https://Mela_World_NEWS"  # ወይም ID e.g., "-100123456789"
+TELEGRAM_CHANNEL_ID = "-1003900033528"  # ወይም ID e.g., "-100123456789"
 
 # የተላኩ ዜናዎችን መመዝገቢያ JSON ፋይል
 DB_FILE = "sent_news.json"
