@@ -4,9 +4,8 @@ import requests
 from bs4 import BeautifulSoup
 
 # --- CONFIGURATION ---
-# የቴሌግራም ቦት ቶከን እና የቻናል ስም ወይም ID እዚህ ያስገቡ
 TELEGRAM_BOT_TOKEN = "8870500617:AAGq_oPWR4rA9mLRVYV3pUPkf-TvEKnWy-E"
-TELEGRAM_CHANNEL_ID = "-1003900033528"  # ወይም ID e.g., "-100123456789"
+TELEGRAM_CHANNEL_ID = "-1003900033528"
 
 DB_FILE = "sent_news.json"
 NEWS_URL = "https://news.opera.com/" 
@@ -39,7 +38,7 @@ def fetch_article_details(article_url):
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
             
-            # 1. ምስል መፈለግ (በኦፔራ ኒውስ ገጽ ላይ ያለ ዋና ምስል)
+            # 1. ምስል መፈለግ
             img_tag = soup.find("img")
             if img_tag and img_tag.get("src"):
                 image_url = img_tag["src"]
@@ -65,7 +64,6 @@ def fetch_article_details(article_url):
 def send_telegram_post(title, content, link, image_url):
     """ምስል ካለ ከምስል ጋር፣ ከሌለ በጽሑፍ ብቻ ወደ ቴሌግራም ይልካል"""
     
-    # በምስል ስር የሚጻፍ ጽሑፍ (Caption) ከ1024 characters መብለጥ የለበትም
     caption_limit = 900
     if len(content) > caption_limit:
         content = content[:caption_limit] + "..."
@@ -77,7 +75,6 @@ def send_telegram_post(title, content, link, image_url):
         f"🔗 <a href='{link}'>ምንጭ፡ Opera News</a>"
     )
     
-    # ምስል ካገኘ በ sendPhoto ይልካል
     if image_url:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
         payload = {
@@ -87,7 +84,6 @@ def send_telegram_post(title, content, link, image_url):
             "parse_mode": "HTML"
         }
     else:
-        # ምስል ካልተገኘ በ sendMessage ይልካል
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         payload = {
             "chat_id": TELEGRAM_CHANNEL_ID,
@@ -135,10 +131,7 @@ def scrape_and_post():
             if link not in sent_news:
                 print(f"አዲስ ዜና ተገኝቷል፡ {title}")
                 
-                # 1. ጽሑፉን እና ምስሉን ማውረድ
                 full_content, image_url = fetch_article_details(link)
-                
-                # 2. ወደ ቴሌግራም መላክ
                 success = send_telegram_post(title, full_content, link, image_url)
                 
                 if success:
