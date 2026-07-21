@@ -2,19 +2,21 @@ name: Opera News Telegram Scraper
 
 on:
   schedule:
-    # በየ 15 ደቂቃው በራሱ ይነሳል
     - cron: '*/15 * * * *'
-  workflow_dispatch: # በእጅ ለመቀስቀስም ያስችላል
+  workflow_dispatch:
+
+permissions:
+  contents: write  # GitHub Actions ፋይል ማሻሻል/Push ማድረግ እንዲችል መብት ይሰጠዋል
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4  # ወደ v4 ተሻሽሏል
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5  # ወደ v5 ተሻሽሏል
         with:
           python-version: '3.10'
 
