@@ -6,7 +6,7 @@ from deep_translator import GoogleTranslator
 
 # --- CONFIGURATION ---
 TELEGRAM_BOT_TOKEN = "8802119418:AAF13aJKhIw6HboE7O1t0F2Ow4WUkZGmQF8"
-TELEGRAM_CHANNEL_ID = "@Mela_World_NEWS"
+TELEGRAM_CHANNEL_ID = "-1003900033528"
 
 DB_FILE = "sent_news.json"
 NEWS_URL = "https://news.opera.com/" 
