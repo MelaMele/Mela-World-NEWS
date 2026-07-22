@@ -2,6 +2,7 @@ import os
 import json
 import requests
 from bs4 import BeautifulSoup
+from deep_translator import GoogleTranslator
 
 # --- CONFIGURATION ---
 TELEGRAM_BOT_TOKEN = "8802119418:AAF13aJKhIw6HboE7O1t0F2Ow4WUkZGmQF8"
@@ -9,6 +10,20 @@ TELEGRAM_CHANNEL_ID = "@Mela_World_NEWS"
 
 DB_FILE = "sent_news.json"
 NEWS_URL = "https://news.opera.com/" 
+
+# --- TRANSLATION HELPER ---
+
+def translate_to_amharic(text):
+    """ጽሑፎችን ከእንግሊዝኛ ወደ አማርኛ የሚተረጉም ፋንክሽን"""
+    if not text:
+        return ""
+    try:
+        # Google Translate ን በነጻ በመጠቀም መተርጎም
+        translated = GoogleTranslator(source='auto', target='am').translate(text)
+        return translated
+    except Exception as e:
+        print(f"የትርጉም ስህተት፡ {e}")
+        return text  # ትርጉሙ ካልሰራ ዋናውን ጽሑፍ ይመልሳል
 
 # --- HELPER FUNCTIONS ---
 
@@ -26,7 +41,7 @@ def save_sent_news(sent_list):
         json.dump(sent_list, f, ensure_ascii=False, indent=2)
 
 def fetch_article_details(article_url):
-    """የዜናው ሊንክ ውስጥ ገብቶ ሙሉውን ጽሑፍ እና ምስል ያወጣል"""
+    """የዜናውን ሙሉ ጽሑፍ እና ምስል ያወጣል"""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
     }
@@ -54,25 +69,28 @@ def fetch_article_details(article_url):
                 if len(txt) > 20 and not txt.startswith("©"):
                     full_text.append(txt)
             
-            content = "\n\n".join(full_text[:4])
+            # የመጀመሪያዎቹን 3 አንቀጾች መያዝ
+            content = "\n\n".join(full_text[:3])
             
     except Exception as e:
         print(f"የዜናውን ዝርዝር በማውረድ ላይ ስህተት፡ {e}")
     
     return content, image_url
 
-def send_telegram_post(title, content, link, image_url):
-    """ምስል ካለ ከምስል ጋር፣ ከሌለ በጽሑፍ ብቻ ወደ ቴሌግራም ይልካል"""
+def send_telegram_post(title_am, content_am, image_url):
+    """በአማርኛ የተተረጎመውን ዜና ወደ ቴሌግራም ይልካል"""
     
+    # የቴሌግራም የምስል Caption ገደብ (1024 characters)
     caption_limit = 900
-    if len(content) > caption_limit:
-        content = content[:caption_limit] + "..."
+    if len(content_am) > caption_limit:
+        content_am = content_am[:caption_limit] + "..."
 
+    # የፖስቱ ቅርጽ (Format) - ወደ ውጭ የሚወስድ ሊንክ ተወግዷል!
     caption = (
-        f"<b>📰 {title}</b>\n\n"
-        f"{content}\n\n"
+        f"<b>📰 {title_am}</b>\n\n"
+        f"{content_am}\n\n"
         f"─────\n"
-        f"🔗 <a href='{link}'>ምንጭ፡ Opera News</a>"
+        f"📌 <i>አዳዲስ ዜናዎችን ለማግኘት ቻናላችንን ይከተሉ!</i>"
     )
     
     if image_url:
@@ -88,8 +106,7 @@ def send_telegram_post(title, content, link, image_url):
         payload = {
             "chat_id": TELEGRAM_CHANNEL_ID,
             "text": caption,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True
+            "parse_mode": "HTML"
         }
     
     try:
@@ -119,25 +136,33 @@ def scrape_and_post():
 
         count = 0
         for article in articles:
-            title = article.get_text().strip()
+            title_en = article.get_text().strip()
             link = article["href"]
 
             if not link.startswith("http"):
                 link = "https://news.opera.com" + link
 
-            if len(title) < 15:
+            if len(title_en) < 15:
                 continue
 
             if link not in sent_news:
-                print(f"አዲስ ዜና ተገኝቷል፡ {title}")
+                print(f"አዲስ ዜና ተገኝቷል (EN): {title_en}")
                 
-                full_content, image_url = fetch_article_details(link)
-                success = send_telegram_post(title, full_content, link, image_url)
+                # 1. የዜናውን ዝርዝር ማውረድ
+                full_content_en, image_url = fetch_article_details(link)
+                
+                # 2. ርዕሱን እና ጽሑፉን ወደ አማርኛ መተርጎም
+                print("ወደ አማርኛ በመተርጎም ላይ...")
+                title_am = translate_to_amharic(title_en)
+                content_am = translate_to_amharic(full_content_en)
+                
+                # 3. በአማርኛ የተተረጎመውን ዜና መላክ
+                success = send_telegram_post(title_am, content_am, image_url)
                 
                 if success:
                     sent_news.append(link)
                     save_sent_news(sent_news)
-                    print("ዜናው ከምስሉ ጋር ወደ ቴሌግራም ተልኳል!")
+                    print("ዜናው በአማርኛ ተተርጉሞ ወደ ቴሌግራም ተልኳል!")
                     count += 1
                     
                 if count >= 2:
