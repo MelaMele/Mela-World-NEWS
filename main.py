@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 
 # --- CONFIGURATION ---
 TELEGRAM_BOT_TOKEN = "8870500617:AAHNClBZr0fAOgHJ7_va0F3UWqriUF_08fM"
-TELEGRAM_CHANNEL_ID = "-1003888249349"
+TELEGRAM_CHANNEL_ID = "-1003900033528"
 
 DB_FILE = "sent_news.json"
 NEWS_URL = "https://news.opera.com/" 
