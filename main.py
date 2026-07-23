@@ -4,9 +4,9 @@ import requests
 from bs4 import BeautifulSoup
 from deep_translator import GoogleTranslator
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (የተስተካከለ) ---
 TELEGRAM_BOT_TOKEN = "8802119418:AAF13aJKhIw6HboE7O1t0F2Ow4WUkZGmQF8"
-TELEGRAM_CHANNEL_ID = "@Mela_World_NEWS"
+TELEGRAM_CHANNEL_ID = "@Mela_World_NEWS"  # ወይም "-1003900033528"
 
 DB_FILE = "sent_news.json"
 NEWS_URL = "https://news.opera.com/" 
@@ -18,12 +18,11 @@ def translate_to_amharic(text):
     if not text:
         return ""
     try:
-        # Google Translate ን በነጻ በመጠቀም መተርጎም
         translated = GoogleTranslator(source='auto', target='am').translate(text)
         return translated
     except Exception as e:
         print(f"የትርጉም ስህተት፡ {e}")
-        return text  # ትርጉሙ ካልሰራ ዋናውን ጽሑፍ ይመልሳል
+        return text
 
 # --- HELPER FUNCTIONS ---
 
@@ -53,14 +52,14 @@ def fetch_article_details(article_url):
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
             
-            # 1. ምስል መፈለግ
+            # ምስል መፈለግ
             img_tag = soup.find("img")
             if img_tag and img_tag.get("src"):
                 image_url = img_tag["src"]
                 if not image_url.startswith("http"):
                     image_url = "https:" + image_url if image_url.startswith("//") else "https://news.opera.com" + image_url
 
-            # 2. የጽሑፍ አንቀጾችን መፈለግ
+            # የጽሑፍ አንቀጾችን መፈለግ
             paragraphs = soup.find_all("p")
             full_text = []
             
@@ -69,7 +68,6 @@ def fetch_article_details(article_url):
                 if len(txt) > 20 and not txt.startswith("©"):
                     full_text.append(txt)
             
-            # የመጀመሪያዎቹን 3 አንቀጾች መያዝ
             content = "\n\n".join(full_text[:3])
             
     except Exception as e:
@@ -80,12 +78,10 @@ def fetch_article_details(article_url):
 def send_telegram_post(title_am, content_am, image_url):
     """በአማርኛ የተተረጎመውን ዜና ወደ ቴሌግራም ይልካል"""
     
-    # የቴሌግራም የምስል Caption ገደብ (1024 characters)
     caption_limit = 900
     if len(content_am) > caption_limit:
         content_am = content_am[:caption_limit] + "..."
 
-    # የፖስቱ ቅርጽ (Format) - ወደ ውጭ የሚወስድ ሊንክ ተወግዷል!
     caption = (
         f"<b>📰 {title_am}</b>\n\n"
         f"{content_am}\n\n"
@@ -120,7 +116,7 @@ def send_telegram_post(title_am, content_am, image_url):
 
 def scrape_and_post():
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36)"
     }
     
     try:
@@ -148,15 +144,12 @@ def scrape_and_post():
             if link not in sent_news:
                 print(f"አዲስ ዜና ተገኝቷል (EN): {title_en}")
                 
-                # 1. የዜናውን ዝርዝር ማውረድ
                 full_content_en, image_url = fetch_article_details(link)
                 
-                # 2. ርዕሱን እና ጽሑፉን ወደ አማርኛ መተርጎም
                 print("ወደ አማርኛ በመተርጎም ላይ...")
                 title_am = translate_to_amharic(title_en)
                 content_am = translate_to_amharic(full_content_en)
                 
-                # 3. በአማርኛ የተተረጎመውን ዜና መላክ
                 success = send_telegram_post(title_am, content_am, image_url)
                 
                 if success:
