@@ -184,7 +184,7 @@ def scrape_and_post():
                 else:
                     print("❌ ዜናውን ወደ ቴሌግራም መላክ አልተቻለም።")
                     
-                if count >= 2:
+                if count >= 5:
                     break
 
         if count == 0:
