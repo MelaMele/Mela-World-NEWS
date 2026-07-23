@@ -4,9 +4,9 @@ import requests
 from bs4 import BeautifulSoup
 from deep_translator import GoogleTranslator
 
-# --- CONFIGURATION (የተስተካከለ) ---
+# --- CONFIGURATION ---
 TELEGRAM_BOT_TOKEN = "8802119418:AAF13aJKhIw6HboE7O1t0F2Ow4WUkZGmQF8"
-TELEGRAM_CHANNEL_ID = "@Mela_World_NEWS"  # ወይም "-1003900033528"
+TELEGRAM_CHANNEL_ID = "@Mela_World_NEWS"
 
 DB_FILE = "sent_news.json"
 NEWS_URL = "https://news.opera.com/" 
@@ -65,7 +65,7 @@ def fetch_article_details(article_url):
             
             for p in paragraphs:
                 txt = p.get_text().strip()
-                if len(txt) > 20 and not txt.startswith("©"):
+                if len(txt) > 25 and not txt.startswith("©"):
                     full_text.append(txt)
             
             content = "\n\n".join(full_text[:3])
@@ -81,6 +81,10 @@ def send_telegram_post(title_am, content_am, image_url):
     caption_limit = 900
     if len(content_am) > caption_limit:
         content_am = content_am[:caption_limit] + "..."
+
+    # ይዘት ባዶ ከሆነ ርዕሱን ብቻ ይልካል
+    if not content_am:
+        content_am = "ለተጨማሪ መረጃ ቻናላችንን ይከታተሉ።"
 
     caption = (
         f"<b>📰 {title_am}</b>\n\n"
@@ -116,9 +120,12 @@ def send_telegram_post(title_am, content_am, image_url):
 
 def scrape_and_post():
     headers = {
-        "User-Agent": "Mozilla/5.0 (Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36)"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
     }
     
+    # አላስፈላጊ ሊንኮችን ለማስወገድ (Filter)
+    IGNORED_TITLES = ["privacy statement", "terms of service", "about us", "cookie policy", "contact us"]
+
     try:
         response = requests.get(NEWS_URL, headers=headers)
         if response.status_code != 200:
@@ -138,7 +145,8 @@ def scrape_and_post():
             if not link.startswith("http"):
                 link = "https://news.opera.com" + link
 
-            if len(title_en) < 15:
+            # አላስፈላጊ አጫጭር ሊንኮችን እና የፖሊሲ ገጾችን ማለፍ
+            if len(title_en) < 20 or any(ignored in title_en.lower() for ignored in IGNORED_TITLES):
                 continue
 
             if link not in sent_news:
@@ -148,15 +156,19 @@ def scrape_and_post():
                 
                 print("ወደ አማርኛ በመተርጎም ላይ...")
                 title_am = translate_to_amharic(title_en)
-                content_am = translate_to_amharic(full_content_en)
+                content_am = translate_to_amharic(full_content_en) if full_content_en else ""
                 
                 success = send_telegram_post(title_am, content_am, image_url)
                 
+                # የተላከውንም ያልተላከውንም መመዝገብ (እንዳይደገም)
+                sent_news.append(link)
+                save_sent_news(sent_news)
+
                 if success:
-                    sent_news.append(link)
-                    save_sent_news(sent_news)
-                    print("ዜናው በአማርኛ ተተርጉሞ ወደ ቴሌግራም ተልኳል!")
+                    print("✅ ዜናው በአማርኛ ተተርጉሞ ወደ ቴሌግራም ተልኳል!")
                     count += 1
+                else:
+                    print("❌ ዜናውን ወደ ቴሌግራም መላክ አልተቻለም።")
                     
                 if count >= 2:
                     break
