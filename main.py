@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import requests
 from bs4 import BeautifulSoup
 from deep_translator import GoogleTranslator
@@ -13,16 +14,24 @@ NEWS_URL = "https://news.opera.com/"
 
 # --- TRANSLATION HELPER ---
 
+def clean_text(text):
+    """የቴሌግራም HTML format እንዳይበላሽ ምልክቶችን ማጽጃ"""
+    if not text:
+        return ""
+    # HTML tag ሊመስሉ የሚችሉ ምልክቶችን መተካት
+    text = text.replace("<", "&lt;").replace(">", "&gt;")
+    return text
+
 def translate_to_amharic(text):
     """ጽሑፎችን ከእንግሊዝኛ ወደ አማርኛ የሚተረጉም ፋንክሽን"""
     if not text:
         return ""
     try:
         translated = GoogleTranslator(source='auto', target='am').translate(text)
-        return translated
+        return clean_text(translated)
     except Exception as e:
         print(f"የትርጉም ስህተት፡ {e}")
-        return text
+        return clean_text(text)
 
 # --- HELPER FUNCTIONS ---
 
@@ -55,9 +64,11 @@ def fetch_article_details(article_url):
             # ምስል መፈለግ
             img_tag = soup.find("img")
             if img_tag and img_tag.get("src"):
-                image_url = img_tag["src"]
-                if not image_url.startswith("http"):
-                    image_url = "https:" + image_url if image_url.startswith("//") else "https://news.opera.com" + image_url
+                src = img_tag["src"]
+                if src.startswith("http"):
+                    image_url = src
+                elif src.startswith("//"):
+                    image_url = "https:" + src
 
             # የጽሑፍ አንቀጾችን መፈለግ
             paragraphs = soup.find_all("p")
@@ -78,11 +89,10 @@ def fetch_article_details(article_url):
 def send_telegram_post(title_am, content_am, image_url):
     """በአማርኛ የተተረጎመውን ዜና ወደ ቴሌግራም ይልካል"""
     
-    caption_limit = 900
+    caption_limit = 800
     if len(content_am) > caption_limit:
         content_am = content_am[:caption_limit] + "..."
 
-    # ይዘት ባዶ ከሆነ ርዕሱን ብቻ ይልካል
     if not content_am:
         content_am = "ለተጨማሪ መረጃ ቻናላችንን ይከታተሉ።"
 
@@ -93,6 +103,7 @@ def send_telegram_post(title_am, content_am, image_url):
         f"📌 <i>አዳዲስ ዜናዎችን ለማግኘት ቻናላችንን ይከተሉ!</i>"
     )
     
+    # 1. ምስል ካለ በምስል ለመላክ መሞከር
     if image_url:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
         payload = {
@@ -101,19 +112,24 @@ def send_telegram_post(title_am, content_am, image_url):
             "caption": caption,
             "parse_mode": "HTML"
         }
+        res = requests.post(url, data=payload)
+        if res.status_code == 200:
+            return True
+        else:
+            print(f"የምስል መላክ አልተሳካም ({res.status_code}): {res.text} | በጽሑፍ ብቻ በመሞከር ላይ...")
+
+    # 2. ምስል ከሌለ ወይም ምስሉ ካልሰራ በጽሑፍ ብቻ መላክ
+    url_text = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload_text = {
+        "chat_id": TELEGRAM_CHANNEL_ID,
+        "text": caption,
+        "parse_mode": "HTML"
+    }
+    res_text = requests.post(url_text, data=payload_text)
+    if res_text.status_code == 200:
+        return True
     else:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        payload = {
-            "chat_id": TELEGRAM_CHANNEL_ID,
-            "text": caption,
-            "parse_mode": "HTML"
-        }
-    
-    try:
-        response = requests.post(url, data=payload)
-        return response.status_code == 200
-    except Exception as e:
-        print(f"ስህተት ተከሰተ (Telegram API): {e}")
+        print(f"የጽሑፍ መላክ ስህተት ({res_text.status_code}): {res_text.text}")
         return False
 
 # --- MAIN SCRAPER ---
@@ -123,7 +139,6 @@ def scrape_and_post():
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
     }
     
-    # አላስፈላጊ ሊንኮችን ለማስወገድ (Filter)
     IGNORED_TITLES = ["privacy statement", "terms of service", "about us", "cookie policy", "contact us"]
 
     try:
@@ -145,12 +160,12 @@ def scrape_and_post():
             if not link.startswith("http"):
                 link = "https://news.opera.com" + link
 
-            # አላስፈላጊ አጫጭር ሊንኮችን እና የፖሊሲ ገጾችን ማለፍ
+            # የዜና ርዕስ ከ 20 አකුረፎች ያነሰ ከሆነ ወይም የህግ ገፅ ከሆነ ማለፍ
             if len(title_en) < 20 or any(ignored in title_en.lower() for ignored in IGNORED_TITLES):
                 continue
 
             if link not in sent_news:
-                print(f"አዲስ ዜና ተገኝቷል (EN): {title_en}")
+                print(f"\n📌 አዲስ ዜና ተገኝቷል (EN): {title_en}")
                 
                 full_content_en, image_url = fetch_article_details(link)
                 
@@ -160,7 +175,6 @@ def scrape_and_post():
                 
                 success = send_telegram_post(title_am, content_am, image_url)
                 
-                # የተላከውንም ያልተላከውንም መመዝገብ (እንዳይደገም)
                 sent_news.append(link)
                 save_sent_news(sent_news)
 
