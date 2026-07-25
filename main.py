@@ -1,6 +1,5 @@
 import os
 import json
-import re
 import requests
 from bs4 import BeautifulSoup
 from deep_translator import GoogleTranslator
@@ -10,7 +9,9 @@ TELEGRAM_BOT_TOKEN = "8802119418:AAF13aJKhIw6HboE7O1t0F2Ow4WUkZGmQF8"
 TELEGRAM_CHANNEL_ID = "@Mela_World_NEWS"
 
 DB_FILE = "sent_news.json"
-NEWS_URL = "https://news.opera.com/" 
+
+# የስፖርት ዜና ምንጭ (BBC Sport RSS Feed - ፈጣን እና አስተማማኝ ነው)
+NEWS_URL = "http://feeds.bbci.co.uk/sport/football/rss.xml"
 
 # --- TRANSLATION HELPER ---
 
@@ -18,7 +19,6 @@ def clean_text(text):
     """የቴሌግራም HTML format እንዳይበላሽ ምልክቶችን ማጽጃ"""
     if not text:
         return ""
-    # HTML tag ሊመስሉ የሚችሉ ምልክቶችን መተካት
     text = text.replace("<", "&lt;").replace(">", "&gt;")
     return text
 
@@ -48,59 +48,22 @@ def save_sent_news(sent_list):
     with open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(sent_list, f, ensure_ascii=False, indent=2)
 
-def fetch_article_details(article_url):
-    """የዜናውን ሙሉ ጽሑፍ እና ምስል ያወጣል"""
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-    }
-    image_url = None
-    content = ""
-    
-    try:
-        res = requests.get(article_url, headers=headers, timeout=10)
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.text, "html.parser")
-            
-            # ምስል መፈለግ
-            img_tag = soup.find("img")
-            if img_tag and img_tag.get("src"):
-                src = img_tag["src"]
-                if src.startswith("http"):
-                    image_url = src
-                elif src.startswith("//"):
-                    image_url = "https:" + src
-
-            # የጽሑፍ አንቀጾችን መፈለግ
-            paragraphs = soup.find_all("p")
-            full_text = []
-            
-            for p in paragraphs:
-                txt = p.get_text().strip()
-                if len(txt) > 25 and not txt.startswith("©"):
-                    full_text.append(txt)
-            
-            content = "\n\n".join(full_text[:3])
-            
-    except Exception as e:
-        print(f"የዜናውን ዝርዝር በማውረድ ላይ ስህተት፡ {e}")
-    
-    return content, image_url
-
 def send_telegram_post(title_am, content_am, image_url):
-    """በአማርኛ የተተረጎመውን ዜና ወደ ቴሌግራም ይልካል"""
+    """በአማርኛ የተተረጎመውን የስፖርት ዜና ወደ ቴሌግራም ይልካል"""
     
     caption_limit = 800
     if len(content_am) > caption_limit:
         content_am = content_am[:caption_limit] + "..."
 
     if not content_am:
-        content_am = "ለተጨማሪ መረጃ ቻናላችንን ይከታተሉ።"
+        content_am = "ለተጨማሪ የስፖርት መረጃዎች ቻናላችንን ይከታተሉ።"
 
+    # የስፖርት ዲዛይን ያለው መልእክት
     caption = (
-        f"<b>📰 {title_am}</b>\n\n"
+        f"<b>⚽ {title_am}</b>\n\n"
         f"{content_am}\n\n"
         f"─────\n"
-        f"📌 <i>አዳዲስ ዜናዎችን ለማግኘት ቻናላችንን ይከተሉ!</i>"
+        f"🏆 <i>አዳዲስ እና ትኩስ የስፖርት ዜናዎችን ለማግኘት ቻናላችንን ይቀላቀሉ!</i>"
     )
     
     # 1. ምስል ካለ በምስል ለመላክ መሞከር
@@ -118,7 +81,7 @@ def send_telegram_post(title_am, content_am, image_url):
         else:
             print(f"የምስል መላክ አልተሳካም ({res.status_code}): {res.text} | በጽሑፍ ብቻ በመሞከር ላይ...")
 
-    # 2. ምስል ከሌለ ወይም ምስሉ ካልሰራ በጽሑፍ ብቻ መላክ
+    # 2. ምስል ከሌለ በጽሑፍ ብቻ መላክ
     url_text = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload_text = {
         "chat_id": TELEGRAM_CHANNEL_ID,
@@ -138,40 +101,43 @@ def scrape_and_post():
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
     }
-    
-    IGNORED_TITLES = ["privacy statement", "terms of service", "about us", "cookie policy", "contact us"]
 
     try:
-        response = requests.get(NEWS_URL, headers=headers)
+        response = requests.get(NEWS_URL, headers=headers, timeout=10)
         if response.status_code != 200:
-            print(f"ድረ-ገጹን መክፈት አልተቻለም። Status Code: {response.status_code}")
+            print(f"ምንጩን መክፈት አልተቻለም። Status Code: {response.status_code}")
             return
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        # XML / RSS Parsing
+        soup = BeautifulSoup(response.content, "xml")
+        items = soup.find_all("item")
         sent_news = load_sent_news()
-        
-        articles = soup.find_all("a", href=True)
 
         count = 0
-        for article in articles:
-            title_en = article.get_text().strip()
-            link = article["href"]
+        for item in items:
+            title_en = item.title.text.strip() if item.title else ""
+            link = item.link.text.strip() if item.link else ""
+            description_en = item.description.text.strip() if item.description else ""
+            
+            # ምስል መፈለግ (በ RSS media:thumbnail ወይም media:content ውስጥ)
+            image_url = None
+            media_thumb = item.find("media:thumbnail")
+            media_content = item.find("media:content")
+            
+            if media_thumb and media_thumb.get("url"):
+                image_url = media_thumb["url"]
+            elif media_content and media_content.get("url"):
+                image_url = media_content["url"]
 
-            if not link.startswith("http"):
-                link = "https://news.opera.com" + link
-
-            # የዜና ርዕስ ከ 20 አකුረፎች ያነሰ ከሆነ ወይም የህግ ገፅ ከሆነ ማለፍ
-            if len(title_en) < 20 or any(ignored in title_en.lower() for ignored in IGNORED_TITLES):
+            if not link or len(title_en) < 15:
                 continue
 
             if link not in sent_news:
-                print(f"\n📌 አዲስ ዜና ተገኝቷል (EN): {title_en}")
-                
-                full_content_en, image_url = fetch_article_details(link)
+                print(f"\n📌 አዲስ የስፖርት ዜና ተገኝቷል (EN): {title_en}")
                 
                 print("ወደ አማርኛ በመተርጎም ላይ...")
                 title_am = translate_to_amharic(title_en)
-                content_am = translate_to_amharic(full_content_en) if full_content_en else ""
+                content_am = translate_to_amharic(description_en)
                 
                 success = send_telegram_post(title_am, content_am, image_url)
                 
@@ -179,16 +145,16 @@ def scrape_and_post():
                 save_sent_news(sent_news)
 
                 if success:
-                    print("✅ ዜናው በአማርኛ ተተርጉሞ ወደ ቴሌግራም ተልኳል!")
+                    print("✅ የስፖርት ዜናው በአማርኛ ተተርጉሞ ተልኳል!")
                     count += 1
                 else:
-                    print("❌ ዜናውን ወደ ቴሌግራም መላክ አልተቻለም።")
+                    print("❌ ዜናውን መላክ አልተሳካም።")
                     
-                if count >= 5:
+                if count >= 3:  # በአንድ ዙር 3 አዳዲስ የስፖርት ዜናዎችን ይልካል
                     break
 
         if count == 0:
-            print("አዲስ ያልተላከ ዜና አልተገኘም።")
+            print("አዲስ ያልተላከ የስፖርት ዜና አልተገኘም።")
 
     except Exception as e:
         print(f"Scraping በሚደረግበት ወቅት ስህተት ተከሰተ: {e}")
