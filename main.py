@@ -1,8 +1,12 @@
 import os
 import json
 import requests
-from bs4 import BeautifulSoup
+import warnings
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from deep_translator import GoogleTranslator
+
+# Warning መልእክቱ እንዳይታይ ማደፈን (Suppress Warning)
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 # --- CONFIGURATION ---
 TELEGRAM_BOT_TOKEN = "8802119418:AAF13aJKhIw6HboE7O1t0F2Ow4WUkZGmQF8"
@@ -108,29 +112,31 @@ def scrape_and_post():
             print(f"ምንጩን መክፈት አልተቻለም። Status Code: {response.status_code}")
             return
 
-        # html.parser በመጠቀም የ XML ስህተትን ማስቀረት
+        # HTML parser በመጠቀም RSS መረጃን ማጽዳት
         soup = BeautifulSoup(response.content, "html.parser")
         items = soup.find_all("item")
         sent_news = load_sent_news()
 
         count = 0
         for item in items:
+            # html.parser RSS ታጎችን በትንሹ የፊደል ለውጥ ሊያነበው ስለሚችል በጥንቃቄ መፈለግ
             title_tag = item.find("title")
-            link_tag = item.find("link")
+            
+            # BBC RSS በ html.parser ውስጥ link ወይም guid ሆኖ ሊገኝ ይችላል
+            link_tag = item.find("guid") or item.find("link")
             desc_tag = item.find("description")
 
-            title_en = title_tag.text.strip() if title_tag else ""
-            link = link_tag.text.strip() if link_tag else ""
-            description_en = desc_tag.text.strip() if desc_tag else ""
+            title_en = title_tag.get_text(strip=True) if title_tag else ""
+            link = link_tag.get_text(strip=True) if link_tag else ""
+            description_en = desc_tag.get_text(strip=True) if desc_tag else ""
             
-            # ምስል መፈለግ (በ media:thumbnail ወይም media:content)
+            # ምስል መፈለግ
             image_url = None
             media_thumb = item.find("media:thumbnail") or item.find("media:content")
-            
             if media_thumb and media_thumb.get("url"):
                 image_url = media_thumb["url"]
 
-            if not link or len(title_en) < 15:
+            if not link or len(title_en) < 10:
                 continue
 
             if link not in sent_news:
