@@ -10,7 +10,7 @@ TELEGRAM_CHANNEL_ID = "@Mela_World_NEWS"
 
 DB_FILE = "sent_news.json"
 
-# የስፖርት ዜና ምንጭ (BBC Sport RSS Feed - ፈጣን እና አስተማማኝ ነው)
+# የስፖርት ዜና ምንጭ (BBC Sport RSS Feed)
 NEWS_URL = "http://feeds.bbci.co.uk/sport/football/rss.xml"
 
 # --- TRANSLATION HELPER ---
@@ -108,26 +108,27 @@ def scrape_and_post():
             print(f"ምንጩን መክፈት አልተቻለም። Status Code: {response.status_code}")
             return
 
-        # XML / RSS Parsing
-        soup = BeautifulSoup(response.content, "xml")
+        # html.parser በመጠቀም የ XML ስህተትን ማስቀረት
+        soup = BeautifulSoup(response.content, "html.parser")
         items = soup.find_all("item")
         sent_news = load_sent_news()
 
         count = 0
         for item in items:
-            title_en = item.title.text.strip() if item.title else ""
-            link = item.link.text.strip() if item.link else ""
-            description_en = item.description.text.strip() if item.description else ""
+            title_tag = item.find("title")
+            link_tag = item.find("link")
+            desc_tag = item.find("description")
+
+            title_en = title_tag.text.strip() if title_tag else ""
+            link = link_tag.text.strip() if link_tag else ""
+            description_en = desc_tag.text.strip() if desc_tag else ""
             
-            # ምስል መፈለግ (በ RSS media:thumbnail ወይም media:content ውስጥ)
+            # ምስል መፈለግ (በ media:thumbnail ወይም media:content)
             image_url = None
-            media_thumb = item.find("media:thumbnail")
-            media_content = item.find("media:content")
+            media_thumb = item.find("media:thumbnail") or item.find("media:content")
             
             if media_thumb and media_thumb.get("url"):
                 image_url = media_thumb["url"]
-            elif media_content and media_content.get("url"):
-                image_url = media_content["url"]
 
             if not link or len(title_en) < 15:
                 continue
