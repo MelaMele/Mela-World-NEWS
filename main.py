@@ -2,16 +2,20 @@ import os
 import json
 import requests
 import warnings
+from datetime import datetime
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from deep_translator import GoogleTranslator
 
-# Warning መልእክቱ እንዳይታይ ማደፈን
+# Warning ማደፈን
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 # --- CONFIGURATION ---
 TELEGRAM_BOT_TOKEN = "8802119418:AAF13aJKhIw6HboE7O1t0F2Ow4WUkZGmQF8"
 TELEGRAM_CHANNEL_ID = "@Mela_World_Sports"
 CHANNEL_LINK = "https://t.me/Mela_World_Sports"
+
+# ከ football-data.org ያገኙትን API Key እዚህ ያግቡ
+FOOTBALL_API_KEY = "0b09d7c9459947b2b90b2a16fbdf9cb8"
 
 DB_FILE = "sent_news.json"
 NEWS_URL = "http://feeds.bbci.co.uk/sport/football/rss.xml"
@@ -49,47 +53,14 @@ def save_sent_news(sent_list):
     with open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(sent_list, f, ensure_ascii=False, indent=2)
 
-def send_telegram_poll(question, options):
-    """ለአንባቢዎች በራስ-ሰር የጨዋታ ግምት ወይም ፖል መላኪያ"""
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPoll"
-    payload = {
-        "chat_id": TELEGRAM_CHANNEL_ID,
-        "question": question,
-        "options": json.dumps(options),
-        "is_anonymous": True
-    }
-    try:
-        requests.post(url, data=payload)
-    except Exception as e:
-        print(f"Poll መላክ አልተሳካም: {e}")
-
-def send_telegram_post(title_am, content_am, image_url):
-    """በአማርኛ የተተረጎመውን የስፖርት ዜና ከነ Inline Button ወደ ቴሌግራም ይልካል"""
-    
-    caption_limit = 700
-    if len(content_am) > caption_limit:
-        content_am = content_am[:caption_limit] + "..."
-
-    if not content_am:
-        content_am = "ለተጨማሪ ትኩስ የስፖርት መረጃዎች ቻናላችንን ይከታተሉ።"
-
-    # አቀራረቡን ማሻሻል (Professional Template)
-    caption = (
-        f"🔥 <b>ትኩስ የስፖርት ዜና</b>\n\n"
-        f"⚽ <b>{title_am}</b>\n\n"
-        f"{content_am}\n\n"
-        f"─────────────────\n"
-        f"📌 <i>የአውሮፓ እና የሀገር ውስጥ ስፖርት መረጃዎችን ለማግኘት አሁኑኑ ይቀላቀሉን!</i>"
-    )
-    
-    # የቻናል መቀላቀያ Inline Button አዝራር
+def send_telegram_post(caption, image_url=None):
+    """የቴሌግራም መልእክት መላኪያ (ከነ Join Button)"""
     reply_markup = {
         "inline_keyboard": [
             [{"text": "📢 ቻናላችንን ይቀላቀሉ (Join)", "url": CHANNEL_LINK}]
         ]
     }
     
-    # 1. ምስል ካለ በምስል ለመላክ መሞከር
     if image_url:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
         payload = {
@@ -102,10 +73,7 @@ def send_telegram_post(title_am, content_am, image_url):
         res = requests.post(url, data=payload)
         if res.status_code == 200:
             return True
-        else:
-            print(f"የምስል መላክ አልተሳካም ({res.status_code}) | በጽሑፍ ብቻ በመሞከር ላይ...")
 
-    # 2. ምስል ከሌለ በጽሑፍ ብቻ መላክ
     url_text = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload_text = {
         "chat_id": TELEGRAM_CHANNEL_ID,
@@ -115,6 +83,74 @@ def send_telegram_post(title_am, content_am, image_url):
     }
     res_text = requests.post(url_text, data=payload_text)
     return res_text.status_code == 200
+
+# --- FOOTBALL DATA (FIXTURES & STANDINGS) ---
+
+def fetch_today_matches():
+    """የእንግሊዝ ፕሪሚየር ሊግ የቀኑን ጨዋታዎች ያወጣል"""
+    if FOOTBALL_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY":
+        return
+
+    url = "https://api.football-data.org/v4/competitions/PL/matches?status=SCHEDULED"
+    headers = {"X-Auth-Token": FOOTBALL_API_KEY}
+    
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            matches = data.get("matches", [])
+            today_str = datetime.utcnow().strftime("%Y-%m-%d")
+            
+            today_matches = [m for m in matches if m.get("utcDate", "").startswith(today_str)]
+            
+            if today_matches:
+                text = "📅 <b>የዛሬ የኢንግሊዝ ፕሪሚየር ሊግ ተጠበቂ ጨዋታዎች</b>\n\n"
+                for m in today_matches[:5]:
+                    home = m['homeTeam']['name']
+                    away = m['awayTeam']['name']
+                    # የሰዓት አቆጣጠር ማስተካከያ (UTC to EAT +3)
+                    time_utc = datetime.strptime(m['utcDate'], "%Y-%m-%dT%H:%M:%SZ")
+                    eat_hour = (time_utc.hour + 3) % 24
+                    time_str = f"{eat_hour:02d}:{time_utc.minute:02d}"
+                    
+                    text += f"⚽ <b>{home} VS {away}</b>\n⏰ ሰዓት፦ {time_str} ምሽት\n\n"
+                
+                text += "─────\n🏆 <i>Mela World Sports</i>"
+                send_telegram_post(text)
+                print("✅ የጨዋታ ፕሮግራም ተልኳል!")
+    except Exception as e:
+        print(f"የጨዋታ ፕሮግራም ማውጣት አልተቻለም: {e}")
+
+def fetch_top_standings():
+    """የፕሪሚየር ሊግ የደረጃ ሰንጠረዥ TOP 5 ያወጣል"""
+    if FOOTBALL_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY":
+        return
+
+    url = "https://api.football-data.org/v4/competitions/PL/standings"
+    headers = {"X-Auth-Token": FOOTBALL_API_KEY}
+    
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            table = data['standings'][0]['table']
+            
+            text = "📊 <b>የእንግሊዝ ፕሪሚየር ሊግ የደረጃ ሰንጠረዥ (Top 5)</b>\n\n"
+            text += "<b>ደረጃ | ክለብ | ተጫወቱ | ነጥብ</b>\n"
+            text += "─────────────────\n"
+            
+            for team in table[:5]:
+                pos = team['position']
+                name = team['team']['name']
+                played = team['playedGames']
+                pts = team['points']
+                text += f"<b>{pos}.</b> {name} | {played} | <b>{pts}</b>\n"
+                
+            text += "\n─────\n🏆 <i>Mela World Sports</i>"
+            send_telegram_post(text)
+            print("✅ የደረጃ ሰንጠረዥ ተልኳል!")
+    except Exception as e:
+        print(f"የደረጃ ሰንጠረዥ ማውጣት አልተቻለም: {e}")
 
 # --- MAIN SCRAPER ---
 
@@ -126,7 +162,6 @@ def scrape_and_post():
     try:
         response = requests.get(NEWS_URL, headers=headers, timeout=10)
         if response.status_code != 200:
-            print(f"ምንጩን መክፈት አልተቻለም። Status Code: {response.status_code}")
             return
 
         soup = BeautifulSoup(response.content, "html.parser")
@@ -152,29 +187,31 @@ def scrape_and_post():
                 continue
 
             if link not in sent_news:
-                print(f"\n📌 አዲስ የስፖርት ዜና ተገኝቷል: {title_en}")
+                print(f"\n📌 አዲስ ዜና ተገኝቷል: {title_en}")
                 
-                print("ወደ አማርኛ በመተርጎም ላይ...")
                 title_am = translate_to_amharic(title_en)
                 content_am = translate_to_amharic(description_en)
                 
-                success = send_telegram_post(title_am, content_am, image_url)
+                caption_limit = 700
+                if len(content_am) > caption_limit:
+                    content_am = content_am[:caption_limit] + "..."
+
+                caption = (
+                    f"🔥 <b>ትኩስ የስፖርት ዜና</b>\n\n"
+                    f"⚽ <b>{title_am}</b>\n\n"
+                    f"{content_am}\n\n"
+                    f"─────────────────\n"
+                    f"📌 <i>የአውሮፓ እና የሀገር ውስጥ ስፖርት መረጃዎችን ለማግኘት አሁኑኑ ይቀላቀሉን!</i>"
+                )
+                
+                success = send_telegram_post(caption, image_url)
                 
                 sent_news.append(link)
                 save_sent_news(sent_news)
 
                 if success:
-                    print("✅ ዜናው በአማርኛ ተተርጉሞ ከነ Join Button ተልኳል!")
+                    print("✅ ዜናው በአማርኛ ተተርጉሞ ተልኳል!")
                     count += 1
-                    
-                    # በየ 2 ዜናዎች አንዴ አውቶማቲክ Poll መጨመር (ለተከታታይ አሳታፊነት)
-                    if count == 2:
-                        send_telegram_poll(
-                            question="የዘንድሮውን የሊጉን ዋንጫ ማን የሚያሸንፍ ይመስላችኋል?",
-                            options=["ማንቸስተር ሲቲ", "አርሰናል", "ሊቨርፑል", "ሌላ"]
-                        )
-                else:
-                    print("❌ ዜናውን መላክ አልተሳካም።")
                     
                 if count >= 3:
                     break
@@ -187,3 +224,7 @@ def scrape_and_post():
 
 if __name__ == "__main__":
     scrape_and_post()
+    
+    # የሰዓት ማረጋገጫ (በተወሰነ ጊዜ ብቻ የደረጃ ሰንጠረዥ እና ፕሮግራም እንዲልክ ማድረግ)
+    # fetch_today_matches()
+    # fetch_top_standings()
