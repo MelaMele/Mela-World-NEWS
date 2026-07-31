@@ -5,29 +5,26 @@ import warnings
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from deep_translator import GoogleTranslator
 
-# Warning መልእክቱ እንዳይታይ ማደፈን (Suppress Warning)
+# Warning መልእክቱ እንዳይታይ ማደፈን
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 # --- CONFIGURATION ---
 TELEGRAM_BOT_TOKEN = "8802119418:AAF13aJKhIw6HboE7O1t0F2Ow4WUkZGmQF8"
 TELEGRAM_CHANNEL_ID = "@Mela_World_Sports"
+CHANNEL_LINK = "https://t.me/Mela_World_Sports"
 
 DB_FILE = "sent_news.json"
-
-# የስፖርት ዜና ምንጭ (BBC Sport RSS Feed)
 NEWS_URL = "http://feeds.bbci.co.uk/sport/football/rss.xml"
 
 # --- TRANSLATION HELPER ---
 
 def clean_text(text):
-    """የቴሌግራም HTML format እንዳይበላሽ ምልክቶችን ማጽጃ"""
     if not text:
         return ""
     text = text.replace("<", "&lt;").replace(">", "&gt;")
     return text
 
 def translate_to_amharic(text):
-    """ጽሑፎችን ከእንግሊዝኛ ወደ አማርኛ የሚተረጉም ፋንክሽን"""
     if not text:
         return ""
     try:
@@ -52,23 +49,45 @@ def save_sent_news(sent_list):
     with open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(sent_list, f, ensure_ascii=False, indent=2)
 
+def send_telegram_poll(question, options):
+    """ለአንባቢዎች በራስ-ሰር የጨዋታ ግምት ወይም ፖል መላኪያ"""
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPoll"
+    payload = {
+        "chat_id": TELEGRAM_CHANNEL_ID,
+        "question": question,
+        "options": json.dumps(options),
+        "is_anonymous": True
+    }
+    try:
+        requests.post(url, data=payload)
+    except Exception as e:
+        print(f"Poll መላክ አልተሳካም: {e}")
+
 def send_telegram_post(title_am, content_am, image_url):
-    """በአማርኛ የተተረጎመውን የስፖርት ዜና ወደ ቴሌግራም ይልካል"""
+    """በአማርኛ የተተረጎመውን የስፖርት ዜና ከነ Inline Button ወደ ቴሌግራም ይልካል"""
     
-    caption_limit = 800
+    caption_limit = 700
     if len(content_am) > caption_limit:
         content_am = content_am[:caption_limit] + "..."
 
     if not content_am:
-        content_am = "ለተጨማሪ የስፖርት መረጃዎች ቻናላችንን ይከታተሉ።"
+        content_am = "ለተጨማሪ ትኩስ የስፖርት መረጃዎች ቻናላችንን ይከታተሉ።"
 
-    # የስፖርት ዲዛይን ያለው መልእክት
+    # አቀራረቡን ማሻሻል (Professional Template)
     caption = (
-        f"<b>⚽ {title_am}</b>\n\n"
+        f"🔥 <b>ትኩስ የስፖርት ዜና</b>\n\n"
+        f"⚽ <b>{title_am}</b>\n\n"
         f"{content_am}\n\n"
-        f"─────\n"
-        f"🏆 <i>አዳዲስ እና ትኩስ የስፖርት ዜናዎችን ለማግኘት ቻናላችንን ይቀላቀሉ!</i>"
+        f"─────────────────\n"
+        f"📌 <i>የአውሮፓ እና የሀገር ውስጥ ስፖርት መረጃዎችን ለማግኘት አሁኑኑ ይቀላቀሉን!</i>"
     )
+    
+    # የቻናል መቀላቀያ Inline Button አዝራር
+    reply_markup = {
+        "inline_keyboard": [
+            [{"text": "📢 ቻናላችንን ይቀላቀሉ (Join)", "url": CHANNEL_LINK}]
+        ]
+    }
     
     # 1. ምስል ካለ በምስል ለመላክ መሞከር
     if image_url:
@@ -77,33 +96,31 @@ def send_telegram_post(title_am, content_am, image_url):
             "chat_id": TELEGRAM_CHANNEL_ID,
             "photo": image_url,
             "caption": caption,
-            "parse_mode": "HTML"
+            "parse_mode": "HTML",
+            "reply_markup": json.dumps(reply_markup)
         }
         res = requests.post(url, data=payload)
         if res.status_code == 200:
             return True
         else:
-            print(f"የምስል መላክ አልተሳካም ({res.status_code}): {res.text} | በጽሑፍ ብቻ በመሞከር ላይ...")
+            print(f"የምስል መላክ አልተሳካም ({res.status_code}) | በጽሑፍ ብቻ በመሞከር ላይ...")
 
     # 2. ምስል ከሌለ በጽሑፍ ብቻ መላክ
     url_text = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload_text = {
         "chat_id": TELEGRAM_CHANNEL_ID,
         "text": caption,
-        "parse_mode": "HTML"
+        "parse_mode": "HTML",
+        "reply_markup": json.dumps(reply_markup)
     }
     res_text = requests.post(url_text, data=payload_text)
-    if res_text.status_code == 200:
-        return True
-    else:
-        print(f"የጽሑፍ መላክ ስህተት ({res_text.status_code}): {res_text.text}")
-        return False
+    return res_text.status_code == 200
 
 # --- MAIN SCRAPER ---
 
 def scrape_and_post():
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
 
     try:
@@ -112,17 +129,13 @@ def scrape_and_post():
             print(f"ምንጩን መክፈት አልተቻለም። Status Code: {response.status_code}")
             return
 
-        # HTML parser በመጠቀም RSS መረጃን ማጽዳት
         soup = BeautifulSoup(response.content, "html.parser")
         items = soup.find_all("item")
         sent_news = load_sent_news()
 
         count = 0
         for item in items:
-            # html.parser RSS ታጎችን በትንሹ የፊደል ለውጥ ሊያነበው ስለሚችል በጥንቃቄ መፈለግ
             title_tag = item.find("title")
-            
-            # BBC RSS በ html.parser ውስጥ link ወይም guid ሆኖ ሊገኝ ይችላል
             link_tag = item.find("guid") or item.find("link")
             desc_tag = item.find("description")
 
@@ -130,7 +143,6 @@ def scrape_and_post():
             link = link_tag.get_text(strip=True) if link_tag else ""
             description_en = desc_tag.get_text(strip=True) if desc_tag else ""
             
-            # ምስል መፈለግ
             image_url = None
             media_thumb = item.find("media:thumbnail") or item.find("media:content")
             if media_thumb and media_thumb.get("url"):
@@ -140,7 +152,7 @@ def scrape_and_post():
                 continue
 
             if link not in sent_news:
-                print(f"\n📌 አዲስ የስፖርት ዜና ተገኝቷል (EN): {title_en}")
+                print(f"\n📌 አዲስ የስፖርት ዜና ተገኝቷል: {title_en}")
                 
                 print("ወደ አማርኛ በመተርጎም ላይ...")
                 title_am = translate_to_amharic(title_en)
@@ -152,12 +164,19 @@ def scrape_and_post():
                 save_sent_news(sent_news)
 
                 if success:
-                    print("✅ የስፖርት ዜናው በአማርኛ ተተርጉሞ ተልኳል!")
+                    print("✅ ዜናው በአማርኛ ተተርጉሞ ከነ Join Button ተልኳል!")
                     count += 1
+                    
+                    # በየ 2 ዜናዎች አንዴ አውቶማቲክ Poll መጨመር (ለተከታታይ አሳታፊነት)
+                    if count == 2:
+                        send_telegram_poll(
+                            question="የዘንድሮውን የሊጉን ዋንጫ ማን የሚያሸንፍ ይመስላችኋል?",
+                            options=["ማንቸስተር ሲቲ", "አርሰናል", "ሊቨርፑል", "ሌላ"]
+                        )
                 else:
                     print("❌ ዜናውን መላክ አልተሳካም።")
                     
-                if count >= 3:  # በአንድ ዙር 3 አዳዲስ የስፖርት ዜናዎችን ይልካል
+                if count >= 3:
                     break
 
         if count == 0:
