@@ -3,7 +3,7 @@ import json
 import requests
 import warnings
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from deep_translator import GoogleTranslator
 
@@ -11,11 +11,11 @@ from deep_translator import GoogleTranslator
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 # --- CONFIGURATION ---
-TELEGRAM_BOT_TOKEN = "8802119418:AAF13aJKhIw6HboE7O1t0F2Ow4WUkZGmQF8"
-TELEGRAM_CHANNEL_ID = "@Mela_World_Sports"
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8802119418:AAF13aJKhIw6HboE7O1t0F2Ow4WUkZGmQF8")
+TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID", "@Mela_World_Sports")
 CHANNEL_LINK = "https://t.me/Mela_World_Sports"
 
-FOOTBALL_API_KEY = "0b09d7c9459947b2b90b2a16fbdf9cb8"
+FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY", "0b09d7c9459947b2b90b2a16fbdf9cb8")
 
 DB_FILE = "sent_news.json"
 NEWS_URL = "http://feeds.bbci.co.uk/sport/football/rss.xml"
@@ -90,17 +90,17 @@ def send_daily_quiz():
     """አውቶማቲክ የስፖርት Quiz/ጥያቄና መልስ ለተከታታዮች መላኪያ"""
     quizzes = [
         {
-            "question": "🧠 <b>የቀኑ የስፖርት Quiz:</b> በፕሪሚየር ሊጉ ታሪክ በአንድ ሰሞን (Season) ብዙ ግቦችን ያገባው ተጫዋች ማነው?",
+            "question": "🧠 የቀኑ የስፖርት Quiz: በፕሪሚየር ሊጉ ታሪክ በአንድ ሰሞን (Season) ብዙ ግቦችን ያገባው ተጫዋች ማነው?",
             "options": ["ኤርሊንግ ሃላንድ", "አላን ሺረር", "ክርስቲያኖ ሮናልዶ", "ታሪ አንሪ"],
             "correct_option_id": 0
         },
         {
-            "question": "🧠 <b>የቀኑ የስፖርት Quiz:</b> ቻምፒየንስ ሊግን በብዛት ያሸነፈው ክለብ የትኛው ነው?",
+            "question": "🧠 የቀኑ የስፖርት Quiz: ቻምፒየንስ ሊግን በብዛት ያሸነፈው ክለብ የትኛው ነው?",
             "options": ["ኤሲ ሚላን", "ሪያል ማድሪድ", "ባየርን ሙኒክ", "ሊቨርፑል"],
             "correct_option_id": 1
         },
         {
-            "question": "🧠 <b>የቀኑ የስፖርት Quiz:</b> ባሎንዶርን በብዛት የተቀናጀው ተጫዋች ማነው?",
+            "question": "🧠 የቀኑ የስፖርት Quiz: ባሎንዶርን በብዛት የተቀናጀው ተጫዋች ማነው?",
             "options": ["ክርስቲያኖ ሮናልዶ", "ሊዮኔል ሜሲ", "ዮሃን ክሩይፍ", "ሚሼል ፕላቲኒ"],
             "correct_option_id": 1
         }
@@ -120,6 +120,8 @@ def send_daily_quiz():
         res = requests.post(url, data=payload)
         if res.status_code == 200:
             print("✅ የዕለቱ Quiz ተልኳል!")
+        else:
+            print(f"Quiz ስህተት: {res.text}")
     except Exception as e:
         print(f"Quiz መላክ አልተሳካም: {e}")
 
@@ -161,9 +163,11 @@ def fetch_today_matches():
         if res.status_code == 200:
             data = res.json()
             matches = data.get("matches", [])
-            today_str = datetime.utcnow().strftime("%Y-%m-%d")
             
-            today_matches = [m for m in matches if m.get("utcDate", "").startswith(today_str)]
+            # የዛሬን ቀን በኢትዮጵያ ሰዓት (UTC+3) ማሰላት
+            today_eat = (datetime.utcnow() + timedelta(hours=3)).strftime("%Y-%m-%d")
+            
+            today_matches = [m for m in matches if m.get("utcDate", "").startswith(today_eat)]
             
             if today_matches:
                 text = "📅 <b>የዛሬ የኢንግሊዝ ፕሪሚየር ሊግ ተጠበቂ ጨዋታዎች</b>\n\n"
@@ -171,14 +175,18 @@ def fetch_today_matches():
                     home = m['homeTeam']['name']
                     away = m['awayTeam']['name']
                     time_utc = datetime.strptime(m['utcDate'], "%Y-%m-%dT%H:%M:%SZ")
-                    eat_hour = (time_utc.hour + 3) % 24
-                    time_str = f"{eat_hour:02d}:{time_utc.minute:02d}"
                     
-                    text += f"⚽ <b>{home} VS {away}</b>\n⏰ ሰዓት፦ {time_str} ምሽት\n\n"
+                    # ወደ ኢትዮጵያ ሰዓት መቀየር (UTC + 3)
+                    eat_time = time_utc + timedelta(hours=3)
+                    time_str = eat_time.strftime("%H:%M")
+                    
+                    text += f"⚽ <b>{home} VS {away}</b>\n⏰ ሰዓት፦ {time_str}\n\n"
                 
                 text += "─────\n🏆 <i>Mela World Sports</i>"
                 send_telegram_post(text)
                 print("✅ የጨዋታ ፕሮግራም ተልኳል!")
+            else:
+                print("ዛሬ የተመዘገበ የፕሪሚየር ሊግ ጨዋታ የለም።")
     except Exception as e:
         print(f"የጨዋታ ፕሮግራም ማውጣት አልተቻለም: {e}")
 
@@ -282,7 +290,6 @@ def scrape_and_post():
 if __name__ == "__main__":
     scrape_and_post()
     
-    # ሁሉንም መረጃዎች አውቶማቲክ እንዲልክ ጥሪ ተደርጓል
     fetch_today_matches()
     fetch_top_standings()
     fetch_top_scorers()
