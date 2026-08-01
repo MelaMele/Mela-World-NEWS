@@ -3,6 +3,7 @@ import json
 import requests
 import warnings
 import random
+import html
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from deep_translator import GoogleTranslator
@@ -10,12 +11,15 @@ from deep_translator import GoogleTranslator
 # Warning ማደፈን
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION & CHECKS ---
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID", "@Mela_World_Sports")
 CHANNEL_LINK = "https://t.me/Mela_World_Sports"
-
 FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY")
+
+# ቶከኑ አለመኖሩን ማረጋገጫ (404 Not Found መከላከያ)
+if not TELEGRAM_BOT_TOKEN:
+    print("❌ ስህተት፡ TELEGRAM_BOT_TOKEN በ Environment Variables ውስጥ አልተገኘም! እባክህ GitHub Secretsን አረጋግጥ።")
 
 DB_FILE = "sent_news.json"
 NEWS_URL = "http://feeds.bbci.co.uk/sport/football/rss.xml"
@@ -23,8 +27,12 @@ NEWS_URL = "http://feeds.bbci.co.uk/sport/football/rss.xml"
 # --- TRANSLATION HELPER ---
 
 def clean_text(text):
+    """HTML Tagዎችን ማፅዳት እና የተበላሹ charactersን ማስተካከል"""
     if not text:
         return ""
+    # HTML Entities ን መፍታት (ለምሳሌ &#39; -> ')
+    text = html.unescape(text)
+    # የቴሌግራም HTML tagዎችን እንዳያበላሹ ማስተካከል
     text = text.replace("<", "&lt;").replace(">", "&gt;")
     return text
 
@@ -55,6 +63,10 @@ def save_sent_news(sent_list):
 
 def send_telegram_post(caption, image_url=None):
     """የቴሌግራም መልእክት መላኪያ (ከነ Join Button)"""
+    if not TELEGRAM_BOT_TOKEN:
+        print("⚠️ BOT TOKEN ስለሌለ መልእክት መላክ አልተቻለም።")
+        return False
+
     reply_markup = {
         "inline_keyboard": [
             [{"text": "📢 ቻናላችንን ይቀላቀሉ (Join)", "url": CHANNEL_LINK}]
@@ -88,6 +100,10 @@ def send_telegram_post(caption, image_url=None):
 
 def send_daily_quiz():
     """አውቶማቲክ የስፖርት Quiz/ጥያቄና መልስ ለተከታታዮች መላኪያ"""
+    if not TELEGRAM_BOT_TOKEN:
+        print("⚠️ BOT TOKEN ስለሌለ Quiz መላክ አልተቻለም።")
+        return
+
     quizzes = [
         {
             "question": "🧠 የቀኑ የስፖርት Quiz: በፕሪሚየር ሊጉ ታሪክ በአንድ ሰሞን (Season) ብዙ ግቦችን ያገባው ተጫዋች ማነው?",
@@ -165,6 +181,10 @@ def fetch_top_scorers():
 # --- FOOTBALL DATA (FIXTURES & STANDINGS) ---
 
 def fetch_today_matches():
+    if not FOOTBALL_API_KEY:
+        print("⚠️ FOOTBALL_API_KEY አልተገኘም። የጨዋታ ፕሮግራም ማውጣት አልተቻለም።")
+        return
+
     url = "https://api.football-data.org/v4/competitions/PL/matches?status=SCHEDULED"
     headers = {"X-Auth-Token": FOOTBALL_API_KEY}
     
@@ -198,6 +218,10 @@ def fetch_today_matches():
         print(f"የጨዋታ ፕሮግራም ማውጣት አልተቻለም: {e}")
 
 def fetch_top_standings():
+    if not FOOTBALL_API_KEY:
+        print("⚠️ FOOTBALL_API_KEY አልተገኘም። የደረጃ ሰንጠረዥ ማውጣት አልተቻለም።")
+        return
+
     url = "https://api.football-data.org/v4/competitions/PL/standings"
     headers = {"X-Auth-Token": FOOTBALL_API_KEY}
     
@@ -236,6 +260,7 @@ def scrape_and_post():
         if response.status_code != 200:
             return
 
+        # lxml ወይም html.parser መጠቀም ይቻላል
         soup = BeautifulSoup(response.content, "xml")
         items = soup.find_all("item")
         sent_news = load_sent_news()
