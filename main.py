@@ -23,6 +23,7 @@ if not TELEGRAM_BOT_TOKEN:
 
 DB_FILE = "sent_news.json"
 NEWS_URL = "http://feeds.bbci.co.uk/sport/football/rss.xml"
+TRANSFER_NEWS_URL = "http://feeds.bbci.co.uk/sport/football/gossip/rss.xml"
 
 # --- TRANSLATION HELPER ---
 
@@ -30,9 +31,7 @@ def clean_text(text):
     """HTML Tagዎችን ማፅዳት እና የተበላሹ charactersን ማስተካከል"""
     if not text:
         return ""
-    # HTML Entities ን መፍታት (ለምሳሌ &#39; -> ')
     text = html.unescape(text)
-    # የቴሌግራም HTML tagዎችን እንዳያበላሹ ማስተካከል
     text = text.replace("<", "&lt;").replace(">", "&gt;")
     return text
 
@@ -96,7 +95,81 @@ def send_telegram_post(caption, image_url=None):
     res_text = requests.post(url_text, data=payload_text)
     return res_text.status_code == 200
 
-# --- NEW FEATURES: QUIZ & TOP SCORERS ---
+# --- FEATURE 1: MATCH POLL (የጨዋታ ግምት መስጫ) ---
+
+def send_match_poll(home_team, away_team):
+    """የጨዋታ ውጤት ግምት መስጫ Poll"""
+    if not TELEGRAM_BOT_TOKEN:
+        return
+    
+    home_am = translate_to_amharic(home_team)
+    away_am = translate_to_amharic(away_team)
+    
+    question = f"🔮 የዛሬ ተጠበቂ ጨዋታ ግምት፦ {home_am} VS {away_am} - ማን ያሸንፋል?"
+    options = [f"🔴 {home_am}", "🤝 አቻ (Draw)", f"🔵 {away_am}"]
+    
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPoll"
+    payload = {
+        "chat_id": TELEGRAM_CHANNEL_ID,
+        "question": question,
+        "options": json.dumps(options),
+        "is_anonymous": True
+    }
+    try:
+        res = requests.post(url, data=payload)
+        if res.status_code == 200:
+            print(f"✅ የጨዋታ ግምት Poll ተልኳል: {home_team} VS {away_team}")
+    except Exception as e:
+        print(f"Poll መላክ አልተሳካም: {e}")
+
+# --- FEATURE 2: TRANSFER NEWS SCRAPER (የዝውውር ዜናዎች) ---
+
+def fetch_transfer_news():
+    """የዝውውር ጭወታዎችን ለይቶ ማውጫና መላኪያ"""
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    try:
+        response = requests.get(TRANSFER_NEWS_URL, headers=headers, timeout=10)
+        if response.status_code != 200:
+            return
+
+        soup = BeautifulSoup(response.content, "xml")
+        items = soup.find_all("item")
+        sent_news = load_sent_news()
+
+        for item in items[:2]: # ቢበዛ 2 የዝውውር ዜናዎችን ለመላክ
+            title_tag = item.find("title")
+            link_tag = item.find("guid") or item.find("link")
+            desc_tag = item.find("description")
+
+            title_en = title_tag.get_text(strip=True) if title_tag else ""
+            link = link_tag.get_text(strip=True) if link_tag else ""
+            description_en = desc_tag.get_text(strip=True) if desc_tag else ""
+
+            if not link or len(title_en) < 10:
+                continue
+
+            if link not in sent_news:
+                title_am = translate_to_amharic(title_en)
+                content_am = translate_to_amharic(description_en)
+
+                caption = (
+                    f"🔄 <b>የተጫዋቾች ዝውውር ዜና እና ጭወታዎች</b>\n\n"
+                    f"📌 <b>{title_am}</b>\n\n"
+                    f"{content_am}\n\n"
+                    f"─────────────────\n"
+                    f"🏆 <i>Mela World Sports - የዝውውር መረጃዎች</i>"
+                )
+                
+                success = send_telegram_post(caption)
+                if success:
+                    print(f"✅ የዝውውር ዜና ተልኳል: {title_en}")
+                    sent_news.append(link)
+                    save_sent_news(sent_news)
+                    break
+    except Exception as e:
+        print(f"የዝውውር ዜና ሲሰበሰብ ስህተት ተከሰተ: {e}")
+
+# --- QUIZ & TOP SCORERS ---
 
 def send_daily_quiz():
     """አውቶማቲክ የስፖርት Quiz/ጥያቄና መልስ ለተከታታዮች መላኪያ"""
@@ -142,7 +215,7 @@ def send_daily_quiz():
         print(f"Quiz መላክ አልተሳካም: {e}")
 
 def fetch_top_scorers():
-    """ከ ESPN ድረ-ገፅ ከፍተኛ ግብ አስቆጣሪዎችን ይወስዳል (ለ API 403 ስህተት መፍትሔ)"""
+    """ከ ESPN ድረ-ገፅ ከፍተኛ ግብ አስቆጣሪዎችን ይወስዳል"""
     url = "https://www.espn.com/soccer/stats/_/league/ENG.1"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
@@ -212,6 +285,11 @@ def fetch_today_matches():
                 text += "─────\n🏆 <i>Mela World Sports</i>"
                 send_telegram_post(text)
                 print("✅ የጨዋታ ፕሮግራም ተልኳል!")
+
+                # ለዋናው ጨዋታ (የመጀመሪያው ጨዋታ) አውቶማቲክ Poll ይልካል
+                main_match = today_matches[0]
+                send_match_poll(main_match['homeTeam']['name'], main_match['awayTeam']['name'])
+
             else:
                 print("ዛሬ የተመዘገበ የፕሪሚየር ሊግ ጨዋታ የለም።")
     except Exception as e:
@@ -260,7 +338,6 @@ def scrape_and_post():
         if response.status_code != 200:
             return
 
-        # lxml ወይም html.parser መጠቀም ይቻላል
         soup = BeautifulSoup(response.content, "xml")
         items = soup.find_all("item")
         sent_news = load_sent_news()
@@ -321,6 +398,7 @@ def scrape_and_post():
 
 if __name__ == "__main__":
     scrape_and_post()
+    fetch_transfer_news()
     fetch_today_matches()
     fetch_top_standings()
     fetch_top_scorers()
