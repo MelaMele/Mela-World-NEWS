@@ -126,37 +126,41 @@ def send_daily_quiz():
         print(f"Quiz መላክ አልተሳካም: {e}")
 
 def fetch_top_scorers():
-    """የእንግሊዝ ፕሪሚየር ሊግ ከፍተኛ ግብ አስቆጣሪዎችን ከ Football API ያወጣል"""
-    url = "https://api.football-data.org/v4/competitions/PL/scorers"
-    headers = {"X-Auth-Token": FOOTBALL_API_KEY}
+    """ከ ESPN ድረ-ገፅ ከፍተኛ ግብ አስቆጣሪዎችን ይወስዳል (ለ API 403 ስህተት መፍትሔ)"""
+    url = "https://www.espn.com/soccer/stats/_/league/ENG.1"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
     try:
         res = requests.get(url, headers=headers, timeout=10)
         if res.status_code == 200:
-            data = res.json()
-            scorers = data.get("scorers", [])
+            soup = BeautifulSoup(res.content, "html.parser")
+            rows = soup.find_all("tr", class_="Table__TR")
             
-            if scorers:
-                text = "⚽ <b>የእንግሊዝ ፕሪሚየር ሊግ ከፍተኛ ግብ አስቆጣሪዎች (Top 5)</b>\n\n"
-                text += "<b>ደረጃ | ተጫዋች | ክለብ | ግብ</b>\n"
-                text += "─────────────────\n"
-                
-                for index, item in enumerate(scorers[:5], 1):
-                    player_name = translate_to_amharic(item['player']['name'])
-                    team_name = translate_to_amharic(item['team']['name'])
-                    goals = item['goals']
+            text = "⚽ <b>የእንግሊዝ ፕሪሚየር ሊግ ከፍተኛ ግብ አስቆጣሪዎች (Top 5)</b>\n\n"
+            text += "<b>ደረጃ | ተጫዋች | ግብ</b>\n"
+            text += "─────────────────\n"
+            
+            count = 0
+            for row in rows:
+                cols = row.find_all("td")
+                if len(cols) >= 2:
+                    rank = cols[0].text.strip()
+                    name_elem = cols[1].find("a")
+                    goals_elem = cols[-1].text.strip()
                     
-                    text += f"<b>{index}.</b> {player_name} ({team_name}) — <b>{goals} ግብ</b>\n"
-                    
+                    if name_elem and goals_elem.isdigit():
+                        count += 1
+                        player_am = translate_to_amharic(name_elem.text.strip())
+                        text += f"<b>{count}.</b> {player_am} — <b>{goals_elem} ግብ</b>\n"
+                        if count >= 5:
+                            break
+            
+            if count > 0:
                 text += "\n─────\n🏆 <i>Mela World Sports</i>"
                 send_telegram_post(text)
-                print("✅ የከፍተኛ ግብ አስቆጣሪዎች ሰንጠረዥ በ API ተልኳል!")
-            else:
-                print("⚠️ የግብ አስቆጣሪዎች መረጃ አልተገኘም።")
-        else:
-            print(f"API ስህተት፡ HTTP {res.status_code}")
+                print("✅ የከፍተኛ ግብ አስቆጣሪዎች ሰንጠረዥ ተልኳል!")
     except Exception as e:
-        print(f"የግብ አስቆጣሪዎችን በ API ሲወሰድ ስህተት ተከሰተ: {e}")
+        print(f"የግብ አስቆጣሪዎችን ማውጣት አልተቻለም: {e}")
 
 # --- FOOTBALL DATA (FIXTURES & STANDINGS) ---
 
