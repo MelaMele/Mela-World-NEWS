@@ -225,6 +225,6 @@ def scrape_and_post():
 if __name__ == "__main__":
     scrape_and_post()
     
-    # የሰዓት ማረጋገጫ (በተወሰነ ጊዜ ብቻ የደረጃ ሰንጠረዥ እና ፕሮግራም እንዲልክ ማድረግ)
-    # fetch_today_matches()
-    # fetch_top_standings()
+    # የ `#` ምልክቶቹን በማንሳት እንደዚህ ያስጀምሯቸው፦
+    fetch_today_matches()
+    fetch_top_standings()
