@@ -12,8 +12,8 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 # --- CONFIGURATION ---
 TELEGRAM_BOT_TOKEN = "8802119418:AAF13aJKhIw6HboE7O1t0F2Ow4WUkZGmQF8"
-TELEGRAM_CHANNEL_ID = "@Mela_World_NEWS"
-CHANNEL_LINK = "https://t.me/Mela_World_NEWS"
+TELEGRAM_CHANNEL_ID = "@Mela_World_Sports"
+CHANNEL_LINK = "https://t.me/Mela_World_Sports"
 
 FOOTBALL_API_KEY = "0b09d7c9459947b2b90b2a16fbdf9cb8"
 
