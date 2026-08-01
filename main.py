@@ -129,37 +129,59 @@ def fetch_top_scorers():
     """የእንግሊዝ ፕሪሚየር ሊግ ከፍተኛ ግብ አስቆጣሪዎችን ከ BBC Sport scrape በማድረግ ያወጣል"""
     url = "https://www.bbc.com/sport/football/premier-league/top-scorers"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     
     try:
         res = requests.get(url, headers=headers, timeout=10)
         if res.status_code == 200:
             soup = BeautifulSoup(res.content, "html.parser")
-            rows = soup.find_all("tr")
             
+            # BBC የሠንጠረዥ ወይም የሴል ክፍሎችን ለመያዝ የሚጠቀማቸውን መፈለግ
             scorers_data = []
             
+            # 1. መጀመሪያ በ standard table ይፈልጋል
+            rows = soup.find_all("tr")
             for row in rows:
-                cols = row.find_all("td")
-                if len(cols) >= 4:
-                    name = cols[0].get_text(strip=True)
-                    team = cols[1].get_text(strip=True)
-                    goals = cols[-1].get_text(strip=True)
+                cols = row.find_all(["td", "th"])
+                text_list = [c.get_text(strip=True) for c in cols if c.get_text(strip=True)]
+                
+                # አብዛኛውን ጊዜ [ደረጃ፣ ተጫዋች፣ ክለብ፣ ...፣ ግብ] አደረጃጀት አላቸው
+                if len(text_list) >= 3:
+                    name = text_list[0] if not text_list[0].isdigit() else text_list[1]
+                    team = text_list[1] if not text_list[0].isdigit() else text_list[2]
+                    goals = text_list[-1]
                     
-                    if goals.isdigit():
+                    if goals.isdigit() and len(name) > 2:
+                        scorers_data.append({"name": name, "team": team, "goals": goals})
+
+            # 2. Table ካልተገኘ በ Flex/Grid wrapper ይፈልጋል
+            if not scorers_data:
+                blocks = soup.find_all("div", class_=lambda x: x and "wrapper" in x.lower())
+                for block in blocks:
+                    txt = block.get_text(" ", strip=True)
+                    parts = txt.split()
+                    if len(parts) >= 3 and parts[-1].isdigit():
                         scorers_data.append({
-                            "name": name,
-                            "team": team,
-                            "goals": goals
+                            "name": parts[0],
+                            "team": parts[1] if len(parts) > 2 else "PL",
+                            "goals": parts[-1]
                         })
-            
+
             if scorers_data:
                 text = "⚽ <b>የእንግሊዝ ፕሪሚየር ሊግ ከፍተኛ ግብ አስቆጣሪዎች (Top 5)</b>\n\n"
                 text += "<b>ደረጃ | ተጫዋች | ክለብ | ግብ</b>\n"
                 text += "─────────────────\n"
                 
-                for index, item in enumerate(scorers_data[:5], 1):
+                # ድግግሞሾችን ማጥራት (Deduplicate)
+                unique_scorers = []
+                seen_names = set()
+                for item in scorers_data:
+                    if item['name'] not in seen_names:
+                        seen_names.add(item['name'])
+                        unique_scorers.append(item)
+                
+                for index, item in enumerate(unique_scorers[:5], 1):
                     player_name = translate_to_amharic(item['name'])
                     team_name = translate_to_amharic(item['team'])
                     goals = item['goals']
