@@ -11,11 +11,11 @@ from deep_translator import GoogleTranslator
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 # --- CONFIGURATION ---
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8802119418:AAF13aJKhIw6HboE7O1t0F2Ow4WUkZGmQF8")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID", "@Mela_World_Sports")
 CHANNEL_LINK = "https://t.me/Mela_World_Sports"
 
-FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY", "0b09d7c9459947b2b90b2a16fbdf9cb8")
+FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY")
 
 DB_FILE = "sent_news.json"
 NEWS_URL = "http://feeds.bbci.co.uk/sport/football/rss.xml"
@@ -126,77 +126,37 @@ def send_daily_quiz():
         print(f"Quiz መላክ አልተሳካም: {e}")
 
 def fetch_top_scorers():
-    """የእንግሊዝ ፕሪሚየር ሊግ ከፍተኛ ግብ አስቆጣሪዎችን ከ BBC Sport scrape በማድረግ ያወጣል"""
-    url = "https://www.bbc.com/sport/football/premier-league/top-scorers"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
+    """የእንግሊዝ ፕሪሚየር ሊግ ከፍተኛ ግብ አስቆጣሪዎችን ከ Football API ያወጣል"""
+    url = "https://api.football-data.org/v4/competitions/PL/scorers"
+    headers = {"X-Auth-Token": FOOTBALL_API_KEY}
     
     try:
         res = requests.get(url, headers=headers, timeout=10)
         if res.status_code == 200:
-            soup = BeautifulSoup(res.content, "html.parser")
+            data = res.json()
+            scorers = data.get("scorers", [])
             
-            # BBC የሠንጠረዥ ወይም የሴል ክፍሎችን ለመያዝ የሚጠቀማቸውን መፈለግ
-            scorers_data = []
-            
-            # 1. መጀመሪያ በ standard table ይፈልጋል
-            rows = soup.find_all("tr")
-            for row in rows:
-                cols = row.find_all(["td", "th"])
-                text_list = [c.get_text(strip=True) for c in cols if c.get_text(strip=True)]
-                
-                # አብዛኛውን ጊዜ [ደረጃ፣ ተጫዋች፣ ክለብ፣ ...፣ ግብ] አደረጃጀት አላቸው
-                if len(text_list) >= 3:
-                    name = text_list[0] if not text_list[0].isdigit() else text_list[1]
-                    team = text_list[1] if not text_list[0].isdigit() else text_list[2]
-                    goals = text_list[-1]
-                    
-                    if goals.isdigit() and len(name) > 2:
-                        scorers_data.append({"name": name, "team": team, "goals": goals})
-
-            # 2. Table ካልተገኘ በ Flex/Grid wrapper ይፈልጋል
-            if not scorers_data:
-                blocks = soup.find_all("div", class_=lambda x: x and "wrapper" in x.lower())
-                for block in blocks:
-                    txt = block.get_text(" ", strip=True)
-                    parts = txt.split()
-                    if len(parts) >= 3 and parts[-1].isdigit():
-                        scorers_data.append({
-                            "name": parts[0],
-                            "team": parts[1] if len(parts) > 2 else "PL",
-                            "goals": parts[-1]
-                        })
-
-            if scorers_data:
+            if scorers:
                 text = "⚽ <b>የእንግሊዝ ፕሪሚየር ሊግ ከፍተኛ ግብ አስቆጣሪዎች (Top 5)</b>\n\n"
                 text += "<b>ደረጃ | ተጫዋች | ክለብ | ግብ</b>\n"
                 text += "─────────────────\n"
                 
-                # ድግግሞሾችን ማጥራት (Deduplicate)
-                unique_scorers = []
-                seen_names = set()
-                for item in scorers_data:
-                    if item['name'] not in seen_names:
-                        seen_names.add(item['name'])
-                        unique_scorers.append(item)
-                
-                for index, item in enumerate(unique_scorers[:5], 1):
-                    player_name = translate_to_amharic(item['name'])
-                    team_name = translate_to_amharic(item['team'])
+                for index, item in enumerate(scorers[:5], 1):
+                    player_name = translate_to_amharic(item['player']['name'])
+                    team_name = translate_to_amharic(item['team']['name'])
                     goals = item['goals']
                     
                     text += f"<b>{index}.</b> {player_name} ({team_name}) — <b>{goals} ግብ</b>\n"
                     
                 text += "\n─────\n🏆 <i>Mela World Sports</i>"
                 send_telegram_post(text)
-                print("✅ የከፍተኛ ግብ አስቆጣሪዎች ሰንጠረዥ በ Scraper ተልኳል!")
+                print("✅ የከፍተኛ ግብ አስቆጣሪዎች ሰንጠረዥ በ API ተልኳል!")
             else:
-                print("⚠️ የግብ አስቆጣሪዎች መረጃ ከ BBC ገፅ ማውጣት አልተቻለም።")
+                print("⚠️ የግብ አስቆጣሪዎች መረጃ አልተገኘም።")
         else:
-            print(f"BBC ገፅ መክፈት አልተቻለም፡ HTTP {res.status_code}")
+            print(f"API ስህተት፡ HTTP {res.status_code}")
     except Exception as e:
-        print(f"የግብ አስቆጣሪዎችን Scrape ሲደረግ ስህተት ተከሰተ: {e}")
+        print(f"የግብ አስቆጣሪዎችን በ API ሲወሰድ ስህተት ተከሰተ: {e}")
 
 # --- FOOTBALL DATA (FIXTURES & STANDINGS) ---
 
@@ -272,7 +232,7 @@ def scrape_and_post():
         if response.status_code != 200:
             return
 
-        soup = BeautifulSoup(response.content, "html.parser")
+        soup = BeautifulSoup(response.content, "xml")
         items = soup.find_all("item")
         sent_news = load_sent_news()
 
@@ -332,7 +292,6 @@ def scrape_and_post():
 
 if __name__ == "__main__":
     scrape_and_post()
-    
     fetch_today_matches()
     fetch_top_standings()
     fetch_top_scorers()
