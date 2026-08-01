@@ -2,6 +2,7 @@ import os
 import json
 import requests
 import warnings
+import random
 from datetime import datetime
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from deep_translator import GoogleTranslator
@@ -11,10 +12,9 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 # --- CONFIGURATION ---
 TELEGRAM_BOT_TOKEN = "8802119418:AAF13aJKhIw6HboE7O1t0F2Ow4WUkZGmQF8"
-TELEGRAM_CHANNEL_ID = "@Mela_World_Sports"
-CHANNEL_LINK = "https://t.me/Mela_World_Sports"
+TELEGRAM_CHANNEL_ID = "@Mela_World_NEWS"
+CHANNEL_LINK = "https://t.me/Mela_World_NEWS"
 
-# ከ football-data.org ያገኙትን API Key እዚህ ያግቡ
 FOOTBALL_API_KEY = "0b09d7c9459947b2b90b2a16fbdf9cb8"
 
 DB_FILE = "sent_news.json"
@@ -84,13 +84,75 @@ def send_telegram_post(caption, image_url=None):
     res_text = requests.post(url_text, data=payload_text)
     return res_text.status_code == 200
 
+# --- NEW FEATURES: QUIZ & TOP SCORERS ---
+
+def send_daily_quiz():
+    """አውቶማቲክ የስፖርት Quiz/ጥያቄና መልስ ለተከታታዮች መላኪያ"""
+    quizzes = [
+        {
+            "question": "🧠 <b>የቀኑ የስፖርት Quiz:</b> በፕሪሚየር ሊጉ ታሪክ በአንድ ሰሞን (Season) ብዙ ግቦችን ያገባው ተጫዋች ማነው?",
+            "options": ["ኤርሊንግ ሃላንድ", "አላን ሺረር", "ክርስቲያኖ ሮናልዶ", "ታሪ አንሪ"],
+            "correct_option_id": 0
+        },
+        {
+            "question": "🧠 <b>የቀኑ የስፖርት Quiz:</b> ቻምፒየንስ ሊግን በብዛት ያሸነፈው ክለብ የትኛው ነው?",
+            "options": ["ኤሲ ሚላን", "ሪያል ማድሪድ", "ባየርን ሙኒክ", "ሊቨርፑል"],
+            "correct_option_id": 1
+        },
+        {
+            "question": "🧠 <b>የቀኑ የስፖርት Quiz:</b> ባሎንዶርን በብዛት የተቀናጀው ተጫዋች ማነው?",
+            "options": ["ክርስቲያኖ ሮናልዶ", "ሊዮኔል ሜሲ", "ዮሃን ክሩይፍ", "ሚሼል ፕላቲኒ"],
+            "correct_option_id": 1
+        }
+    ]
+    
+    quiz = random.choice(quizzes)
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPoll"
+    payload = {
+        "chat_id": TELEGRAM_CHANNEL_ID,
+        "question": quiz["question"],
+        "options": json.dumps(quiz["options"]),
+        "is_anonymous": True,
+        "type": "quiz",
+        "correct_option_id": quiz["correct_option_id"]
+    }
+    try:
+        res = requests.post(url, data=payload)
+        if res.status_code == 200:
+            print("✅ የዕለቱ Quiz ተልኳል!")
+    except Exception as e:
+        print(f"Quiz መላክ አልተሳካም: {e}")
+
+def fetch_top_scorers():
+    """የእንግሊዝ ፕሪሚየር ሊግ ከፍተኛ ግብ አስቆጣሪዎችን ያወጣል"""
+    url = "https://api.football-data.org/v4/competitions/PL/scorers"
+    headers = {"X-Auth-Token": FOOTBALL_API_KEY}
+    
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            scorers = data.get("scorers", [])
+            
+            text = "⚽ <b>የእንግሊዝ ፕሪሚየር ሊግ ከፍተኛ ግብ አስቆጣሪዎች (Top 5)</b>\n\n"
+            text += "<b>ደረጃ | ተጫዋች | ክለብ | ግብ</b>\n"
+            text += "─────────────────\n"
+            
+            for index, item in enumerate(scorers[:5], 1):
+                player_name = item['player']['name']
+                team_name = item['team']['name']
+                goals = item['goals']
+                text += f"<b>{index}.</b> {player_name} ({team_name}) — <b>{goals} ግብ</b>\n"
+                
+            text += "\n─────\n🏆 <i>Mela World Sports</i>"
+            send_telegram_post(text)
+            print("✅ የከፍተኛ ግብ አስቆጣሪዎች ሰንጠረዥ ተልኳል!")
+    except Exception as e:
+        print(f"የግብ አስቆጣሪዎችን መረጃ ማውጣት አልተቻለም: {e}")
+
 # --- FOOTBALL DATA (FIXTURES & STANDINGS) ---
 
 def fetch_today_matches():
-    """የእንግሊዝ ፕሪሚየር ሊግ የቀኑን ጨዋታዎች ያወጣል"""
-    if FOOTBALL_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY":
-        return
-
     url = "https://api.football-data.org/v4/competitions/PL/matches?status=SCHEDULED"
     headers = {"X-Auth-Token": FOOTBALL_API_KEY}
     
@@ -108,7 +170,6 @@ def fetch_today_matches():
                 for m in today_matches[:5]:
                     home = m['homeTeam']['name']
                     away = m['awayTeam']['name']
-                    # የሰዓት አቆጣጠር ማስተካከያ (UTC to EAT +3)
                     time_utc = datetime.strptime(m['utcDate'], "%Y-%m-%dT%H:%M:%SZ")
                     eat_hour = (time_utc.hour + 3) % 24
                     time_str = f"{eat_hour:02d}:{time_utc.minute:02d}"
@@ -122,10 +183,6 @@ def fetch_today_matches():
         print(f"የጨዋታ ፕሮግራም ማውጣት አልተቻለም: {e}")
 
 def fetch_top_standings():
-    """የፕሪሚየር ሊግ የደረጃ ሰንጠረዥ TOP 5 ያወጣል"""
-    if FOOTBALL_API_KEY == "YOUR_FOOTBALL_DATA_API_KEY":
-        return
-
     url = "https://api.football-data.org/v4/competitions/PL/standings"
     headers = {"X-Auth-Token": FOOTBALL_API_KEY}
     
@@ -225,6 +282,8 @@ def scrape_and_post():
 if __name__ == "__main__":
     scrape_and_post()
     
-    # የ `#` ምልክቶቹን በማንሳት እንደዚህ ያስጀምሯቸው፦
+    # ሁሉንም መረጃዎች አውቶማቲክ እንዲልክ ጥሪ ተደርጓል
     fetch_today_matches()
     fetch_top_standings()
+    fetch_top_scorers()
+    send_daily_quiz()
