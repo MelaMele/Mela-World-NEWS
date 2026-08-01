@@ -126,31 +126,55 @@ def send_daily_quiz():
         print(f"Quiz መላክ አልተሳካም: {e}")
 
 def fetch_top_scorers():
-    """የእንግሊዝ ፕሪሚየር ሊግ ከፍተኛ ግብ አስቆጣሪዎችን ያወጣል"""
-    url = "https://api.football-data.org/v4/competitions/PL/scorers"
-    headers = {"X-Auth-Token": FOOTBALL_API_KEY}
+    """የእንግሊዝ ፕሪሚየር ሊግ ከፍተኛ ግብ አስቆጣሪዎችን ከ BBC Sport scrape በማድረግ ያወጣል"""
+    url = "https://www.bbc.com/sport/football/premier-league/top-scorers"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+    }
     
     try:
         res = requests.get(url, headers=headers, timeout=10)
         if res.status_code == 200:
-            data = res.json()
-            scorers = data.get("scorers", [])
+            soup = BeautifulSoup(res.content, "html.parser")
+            rows = soup.find_all("tr")
             
-            text = "⚽ <b>የእንግሊዝ ፕሪሚየር ሊግ ከፍተኛ ግብ አስቆጣሪዎች (Top 5)</b>\n\n"
-            text += "<b>ደረጃ | ተጫዋች | ክለብ | ግብ</b>\n"
-            text += "─────────────────\n"
+            scorers_data = []
             
-            for index, item in enumerate(scorers[:5], 1):
-                player_name = item['player']['name']
-                team_name = item['team']['name']
-                goals = item['goals']
-                text += f"<b>{index}.</b> {player_name} ({team_name}) — <b>{goals} ግብ</b>\n"
+            for row in rows:
+                cols = row.find_all("td")
+                if len(cols) >= 4:
+                    name = cols[0].get_text(strip=True)
+                    team = cols[1].get_text(strip=True)
+                    goals = cols[-1].get_text(strip=True)
+                    
+                    if goals.isdigit():
+                        scorers_data.append({
+                            "name": name,
+                            "team": team,
+                            "goals": goals
+                        })
+            
+            if scorers_data:
+                text = "⚽ <b>የእንግሊዝ ፕሪሚየር ሊግ ከፍተኛ ግብ አስቆጣሪዎች (Top 5)</b>\n\n"
+                text += "<b>ደረጃ | ተጫዋች | ክለብ | ግብ</b>\n"
+                text += "─────────────────\n"
                 
-            text += "\n─────\n🏆 <i>Mela World Sports</i>"
-            send_telegram_post(text)
-            print("✅ የከፍተኛ ግብ አስቆጣሪዎች ሰንጠረዥ ተልኳል!")
+                for index, item in enumerate(scorers_data[:5], 1):
+                    player_name = translate_to_amharic(item['name'])
+                    team_name = translate_to_amharic(item['team'])
+                    goals = item['goals']
+                    
+                    text += f"<b>{index}.</b> {player_name} ({team_name}) — <b>{goals} ግብ</b>\n"
+                    
+                text += "\n─────\n🏆 <i>Mela World Sports</i>"
+                send_telegram_post(text)
+                print("✅ የከፍተኛ ግብ አስቆጣሪዎች ሰንጠረዥ በ Scraper ተልኳል!")
+            else:
+                print("⚠️ የግብ አስቆጣሪዎች መረጃ ከ BBC ገፅ ማውጣት አልተቻለም።")
+        else:
+            print(f"BBC ገፅ መክፈት አልተቻለም፡ HTTP {res.status_code}")
     except Exception as e:
-        print(f"የግብ አስቆጣሪዎችን መረጃ ማውጣት አልተቻለም: {e}")
+        print(f"የግብ አስቆጣሪዎችን Scrape ሲደረግ ስህተት ተከሰተ: {e}")
 
 # --- FOOTBALL DATA (FIXTURES & STANDINGS) ---
 
@@ -164,9 +188,7 @@ def fetch_today_matches():
             data = res.json()
             matches = data.get("matches", [])
             
-            # የዛሬን ቀን በኢትዮጵያ ሰዓት (UTC+3) ማሰላት
             today_eat = (datetime.utcnow() + timedelta(hours=3)).strftime("%Y-%m-%d")
-            
             today_matches = [m for m in matches if m.get("utcDate", "").startswith(today_eat)]
             
             if today_matches:
@@ -176,7 +198,6 @@ def fetch_today_matches():
                     away = m['awayTeam']['name']
                     time_utc = datetime.strptime(m['utcDate'], "%Y-%m-%dT%H:%M:%SZ")
                     
-                    # ወደ ኢትዮጵያ ሰዓት መቀየር (UTC + 3)
                     eat_time = time_utc + timedelta(hours=3)
                     time_str = eat_time.strftime("%H:%M")
                     
