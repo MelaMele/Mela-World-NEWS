@@ -7,6 +7,7 @@ import html
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from deep_translator import GoogleTranslator
+from gtts import gTTS
 
 # Warning ማደፈን
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
@@ -17,7 +18,6 @@ TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID", "@Mela_World_Sports")
 CHANNEL_LINK = "https://t.me/Mela_World_Sports"
 FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY")
 
-# ቶከኑ አለመኖሩን ማረጋገጫ (404 Not Found መከላከያ)
 if not TELEGRAM_BOT_TOKEN:
     print("❌ ስህተት፡ TELEGRAM_BOT_TOKEN በ Environment Variables ውስጥ አልተገኘም! እባክህ GitHub Secretsን አረጋግጥ።")
 
@@ -61,7 +61,7 @@ def save_sent_news(sent_list):
         json.dump(sent_list, f, ensure_ascii=False, indent=2)
 
 def send_telegram_post(caption, image_url=None):
-    """የቴሌግራም መልእክት መላኪያ (ከነ Join Button)"""
+    """የቴሌግራም ጽሁፍ/ፎቶ መልእክት መላኪያ"""
     if not TELEGRAM_BOT_TOKEN:
         print("⚠️ BOT TOKEN ስለሌለ መልእክት መላክ አልተቻለም።")
         return False
@@ -95,7 +95,39 @@ def send_telegram_post(caption, image_url=None):
     res_text = requests.post(url_text, data=payload_text)
     return res_text.status_code == 200
 
-# --- FEATURE 1: MATCH POLL (የጨዋታ ግምት መስጫ) ---
+# --- FEATURE: TEXT TO VOICE / AUDIO POST ---
+
+def send_audio_summary(text_content, caption_title):
+    """ጽሁፍን ወደ አማርኛ ድምፅ (Voice) ቀይሮ በቴሌግራም መላክ"""
+    if not TELEGRAM_BOT_TOKEN or not text_content:
+        return
+    
+    audio_file = "news_summary.mp3"
+    try:
+        # gTTS ን በመጠቀም ጽሁፉን ወደ አማርኛ ድምፅ መቀየር
+        tts = gTTS(text=text_content, lang='am')
+        tts.save(audio_file)
+        
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendAudio"
+        caption = f"🎙 <b>{caption_title} (በድምፅ)</b>\n\n─────\n🏆 <i>Mela World Sports</i>"
+        
+        with open(audio_file, 'rb') as audio:
+            files = {'audio': audio}
+            data = {
+                'chat_id': TELEGRAM_CHANNEL_ID,
+                'caption': caption,
+                'parse_mode': 'HTML'
+            }
+            res = requests.post(url, data=data, files=files)
+            if res.status_code == 200:
+                print("✅ የድምፅ ዜና (Audio Post) በተሳካ ሁኔታ ተልኳል!")
+    except Exception as e:
+        print(f"የድምፅ ፋይል ማዘጋጀት/መላክ አልተሳካም: {e}")
+    finally:
+        if os.path.exists(audio_file):
+            os.remove(audio_file)
+
+# --- MATCH POLL ---
 
 def send_match_poll(home_team, away_team):
     """የጨዋታ ውጤት ግምት መስጫ Poll"""
@@ -122,7 +154,7 @@ def send_match_poll(home_team, away_team):
     except Exception as e:
         print(f"Poll መላክ አልተሳካም: {e}")
 
-# --- FEATURE 2: TRANSFER NEWS SCRAPER (የዝውውር ዜናዎች) ---
+# --- TRANSFER NEWS SCRAPER ---
 
 def fetch_transfer_news():
     """የዝውውር ጭወታዎችን ለይቶ ማውጫና መላኪያ"""
@@ -136,7 +168,7 @@ def fetch_transfer_news():
         items = soup.find_all("item")
         sent_news = load_sent_news()
 
-        for item in items[:2]: # ቢበዛ 2 የዝውውር ዜናዎችን ለመላክ
+        for item in items[:2]:
             title_tag = item.find("title")
             link_tag = item.find("guid") or item.find("link")
             desc_tag = item.find("description")
@@ -163,6 +195,8 @@ def fetch_transfer_news():
                 success = send_telegram_post(caption)
                 if success:
                     print(f"✅ የዝውውር ዜና ተልኳል: {title_en}")
+                    # አጭር የድምፅ መረጃም አብሮ ይልካል
+                    send_audio_summary(f"{title_am}። {content_am}", f"የዝውውር ዜና፡ {title_am}")
                     sent_news.append(link)
                     save_sent_news(sent_news)
                     break
@@ -172,9 +206,7 @@ def fetch_transfer_news():
 # --- QUIZ & TOP SCORERS ---
 
 def send_daily_quiz():
-    """አውቶማቲክ የስፖርት Quiz/ጥያቄና መልስ ለተከታታዮች መላኪያ"""
     if not TELEGRAM_BOT_TOKEN:
-        print("⚠️ BOT TOKEN ስለሌለ Quiz መላክ አልተቻለም።")
         return
 
     quizzes = [
@@ -209,13 +241,10 @@ def send_daily_quiz():
         res = requests.post(url, data=payload)
         if res.status_code == 200:
             print("✅ የዕለቱ Quiz ተልኳል!")
-        else:
-            print(f"Quiz ስህተት: {res.text}")
     except Exception as e:
         print(f"Quiz መላክ አልተሳካም: {e}")
 
 def fetch_top_scorers():
-    """ከ ESPN ድረ-ገፅ ከፍተኛ ግብ አስቆጣሪዎችን ይወስዳል"""
     url = "https://www.espn.com/soccer/stats/_/league/ENG.1"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
@@ -233,7 +262,6 @@ def fetch_top_scorers():
             for row in rows:
                 cols = row.find_all("td")
                 if len(cols) >= 2:
-                    rank = cols[0].text.strip()
                     name_elem = cols[1].find("a")
                     goals_elem = cols[-1].text.strip()
                     
@@ -255,7 +283,6 @@ def fetch_top_scorers():
 
 def fetch_today_matches():
     if not FOOTBALL_API_KEY:
-        print("⚠️ FOOTBALL_API_KEY አልተገኘም። የጨዋታ ፕሮግራም ማውጣት አልተቻለም።")
         return
 
     url = "https://api.football-data.org/v4/competitions/PL/matches?status=SCHEDULED"
@@ -276,20 +303,16 @@ def fetch_today_matches():
                     home = m['homeTeam']['name']
                     away = m['awayTeam']['name']
                     time_utc = datetime.strptime(m['utcDate'], "%Y-%m-%dT%H:%M:%SZ")
-                    
                     eat_time = time_utc + timedelta(hours=3)
                     time_str = eat_time.strftime("%H:%M")
-                    
                     text += f"⚽ <b>{home} VS {away}</b>\n⏰ ሰዓት፦ {time_str}\n\n"
                 
                 text += "─────\n🏆 <i>Mela World Sports</i>"
                 send_telegram_post(text)
                 print("✅ የጨዋታ ፕሮግራም ተልኳል!")
 
-                # ለዋናው ጨዋታ (የመጀመሪያው ጨዋታ) አውቶማቲክ Poll ይልካል
                 main_match = today_matches[0]
                 send_match_poll(main_match['homeTeam']['name'], main_match['awayTeam']['name'])
-
             else:
                 print("ዛሬ የተመዘገበ የፕሪሚየር ሊግ ጨዋታ የለም።")
     except Exception as e:
@@ -297,7 +320,6 @@ def fetch_today_matches():
 
 def fetch_top_standings():
     if not FOOTBALL_API_KEY:
-        print("⚠️ FOOTBALL_API_KEY አልተገኘም። የደረጃ ሰንጠረዥ ማውጣት አልተቻለም።")
         return
 
     url = "https://api.football-data.org/v4/competitions/PL/standings"
@@ -329,9 +351,7 @@ def fetch_top_standings():
 # --- MAIN SCRAPER ---
 
 def scrape_and_post():
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
     try:
         response = requests.get(NEWS_URL, headers=headers, timeout=10)
@@ -361,8 +381,6 @@ def scrape_and_post():
                 continue
 
             if link not in sent_news:
-                print(f"\n📌 አዲስ ዜና ተገኝቷል: {title_en}")
-                
                 title_am = translate_to_amharic(title_en)
                 content_am = translate_to_amharic(description_en)
                 
@@ -380,18 +398,18 @@ def scrape_and_post():
                 
                 success = send_telegram_post(caption, image_url)
                 
-                sent_news.append(link)
-                save_sent_news(sent_news)
-
                 if success:
-                    print("✅ ዜናው በአማርኛ ተተርጉሞ ተልኳል!")
+                    print(f"✅ ዜና ተልኳል: {title_en}")
+                    # የመጀመሪያውን አዲስ ዜና በድምፅ (Voice) አብሮ ይልካል
+                    if count == 0:
+                        send_audio_summary(f"{title_am}። {content_am}", title_am)
+                    
+                    sent_news.append(link)
+                    save_sent_news(sent_news)
                     count += 1
                     
                 if count >= 3:
                     break
-
-        if count == 0:
-            print("አዲስ ያልተላከ የስፖርት ዜና አልተገኘም።")
 
     except Exception as e:
         print(f"Scraping በሚደረግበት ወቅት ስህተት ተከሰተ: {e}")
