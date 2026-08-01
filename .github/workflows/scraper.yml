@@ -1,40 +1,43 @@
-name: Opera News Telegram Scraper
+name: Sports Bot Daily Runner
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
-  workflow_dispatch:
-
-permissions:
-  contents: write
+    # በUTC ሰዓት አቆጣጠር የተዘጋጀ (የኢትዮጵያ ሰዓት UTC+3 ነው)
+    - cron: '0 5 * * *'   # በኢትዮጵያ ጠዋት 2:00 አበይት ዜናዎች እና የጨዋታ ፕሮግራም
+    - cron: '0 9 * * *'   # በኢትዮጵያ ቀን 12:00 የዝውውር ጭወታዎች (Transfers)
+    - cron: '0 13 * * *'  # በኢትዮጵያ ማታ 4:00 የዕለቱ Quiz እና የደረጃ ሰንጠረዥ
+    - cron: '0 18 * * *'  # በኢትዮጵያ ምሽት 9:00 የምሽት አበይት ዜናዎች
+  workflow_dispatch: # በእጅ (Manually) Run ለማድረግ የሚረዳ
 
 jobs:
-  build:
+  run-bot:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
-          pip install requests bs4 lxml python-telegram-bot deep-translator
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Run Scraper Script
+      - name: Run Main Bot Script
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           FOOTBALL_API_KEY: ${{ secrets.FOOTBALL_API_KEY }}
         run: python main.py
 
-      - name: Commit and Push Updated JSON
+      - name: Commit and push sent news database
         run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add sent_news.json
-          git commit -m "Update sent news database" || exit 0
+          git commit -m "Auto-update sent news history" || exit 0
           git push
