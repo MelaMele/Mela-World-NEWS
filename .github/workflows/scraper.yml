@@ -22,9 +22,13 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install requests bs4 python-telegram-bot deep-translator
+          pip install requests bs4 lxml python-telegram-bot deep-translator
 
       - name: Run Scraper Script
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          FOOTBALL_API_KEY: ${{ secrets.FOOTBALL_API_KEY }}
         run: python main.py
 
       - name: Commit and Push Updated JSON
