@@ -25,11 +25,12 @@ if not FOOTBALL_API_KEY:
 
 DB_FILE = "sent_news.json"
 
-# ከተለያዩ ድህረ-ገጾች ለማምጣት List ተጠቅመናል (List of RSS Feeds)
+# ከተለያዩ ታማኝ ድህረ-ገጾች ለማምጣት አዳዲስ ሊንኮች
 NEWS_URLS = [
-    "http://feeds.bbci.co.uk/sport/football/rss.xml",
-    "http://feeds.archysport.com/football/rss.xml",
-    "https://www.goal.com/feeds/en/news" # ተጨማሪ ምንጭ
+    "http://feeds.bbci.co.uk/sport/football/rss.xml",    # BBC Sport
+    "https://www.skysports.com/rss/12040",               # Sky Sports Football
+    "https://www.espn.com/espn/rss/soccer/news",         # ESPN Soccer
+    "https://www.theguardian.com/football/rss"           # The Guardian Football
 ]
 TRANSFER_NEWS_URL = "http://feeds.bbci.co.uk/sport/football/gossip/rss.xml"
 
