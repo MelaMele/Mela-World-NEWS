@@ -23,6 +23,7 @@ if not TELEGRAM_BOT_TOKEN:
 
 DB_FILE = "sent_news.json"
 NEWS_URL = "http://feeds.bbci.co.uk/sport/football/rss.xml"
+NEWS_URL = "http://feeds.archysport.com/football/rss.xml"
 TRANSFER_NEWS_URL = "http://feeds.bbci.co.uk/sport/football/gossip/rss.xml"
 
 # --- TRANSLATION HELPER ---
