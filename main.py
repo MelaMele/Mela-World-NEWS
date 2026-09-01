@@ -4,231 +4,217 @@ import requests
 import warnings
 import random
 import html
-from datetime import datetime, timedelta
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from deep_translator import GoogleTranslator
 
-# Warning ማደፈን
+# የማያስፈልጉ Warningዎችን ማደፈን
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
-# --- CONFIGURATION & CHECKS ---
+# --- ውቅሮች (CONFIGURATIONS) ---
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID", "@Mela_World_Sports")
 CHANNEL_LINK = "https://t.me/Mela_World_Sports"
-FOOTBALL_API_KEY = os.getenv("FOOTBALL_API_KEY")
-
-if not TELEGRAM_BOT_TOKEN:
-    print("❌ ስህተት፡ TELEGRAM_BOT_TOKEN በ Environment Variables ውስጥ አልተገኘም!")
-if not FOOTBALL_API_KEY:
-    print("⚠️ ማስጠንቀቂያ፡ FOOTBALL_API_KEY አልተገኘም! የጨዋታ መርሃግብር ላይሰራ ይችላል።")
-
 DB_FILE = "sent_news.json"
 
-# --- አጠቃላይ የስፖርት ዜናዎች ምንጭ (All Sports RSS Feeds) ---
-NEWS_URLS = [
-    "http://feeds.bbci.co.uk/sport/rss.xml",             # BBC Sport (አጠቃላይ ስፖርት)
-    "https://www.skysports.com/rss/12010",               # Sky Sports News (አጠቃላይ)
-    "https://www.espn.com/espn/rss/news",                # ESPN News (የተለያዩ ስፖርቶች)
-    "https://www.theguardian.com/sport/rss",             # The Guardian Sport
-    "http://feeds.bbci.co.uk/sport/football/rss.xml",    # BBC Football
-    "https://www.sportskeeda.com/feed",                  # Sportskeeda (Multi-sport)
-]
+# --- የስፖርት ዜና ምንጮች ---
+NEWS_FEEDS = {
+    "GENERAL": [
+        "http://feeds.bbci.co.uk/sport/rss.xml",
+        "https://www.skysports.com/rss/12010",
+        "https://www.espn.com/espn/rss/news",
+        "https://www.theguardian.com/sport/rss",
+        "http://feeds.bbci.co.uk/sport/football/rss.xml",
+        "https://www.sportskeeda.com/feed",
+    ],
+    "TRANSFER": [
+        "http://feeds.bbci.co.uk/sport/football/gossip/rss.xml"
+    ]
+}
 
-TRANSFER_NEWS_URL = "http://feeds.bbci.co.uk/sport/football/gossip/rss.xml"
+# የስፖርት ቃላት ትርጉም ማስተካከያ (የተዛቡ ትርጉሞችን ለማረም)
+SPORTS_GLOSSARY = {
+    "Gunners": "መድፈኞቹ",
+    "Red Devils": "ቀያይ ሰይጣኖች",
+    "Clean sheet": "መረብን ሳያስደፍሩ መውጣት",
+    "Hat-trick": "ሀት-ትሪክ",
+    "penalty": "የፍጹም ቅጣት ምት",
+    "transfer window": "የዝውውር መስኮት",
+    "midfielder": "አማካኝ",
+    "striker": "አጥቂ",
+    "defender": "ተከላካይ",
+    "goalkeeper": "በረኛ"
+}
 
-# --- TRANSLATION HELPER ---
-def clean_text(text):
+# --- HTTP SESSION ---
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+})
+
+
+# --- DATABASE FUNCTIONS ---
+def load_sent_news():
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                return set(json.load(f))
+        except (json.JSONDecodeError, IOError):
+            return set()
+    return set()
+
+def save_sent_news(sent_set):
+    sent_list = list(sent_set)[-500:]  # የቅርብ 500 ዜናዎችን ብቻ ማስቀረት
+    with open(DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(sent_list, f, ensure_ascii=False, indent=2)
+
+
+# --- TRANSLATION & TEXT PROCESSING ---
+def sanitize_text(text):
     if not text:
         return ""
     text = html.unescape(text)
-    text = text.replace("<", "&lt;").replace(">", "&gt;")
-    return text
+    # የቴሌግራም HTML ታጎችን ላለመስበር ምልክቶችን ማስተካከል
+    return text.replace("<", "&lt;").replace(">", "&gt;").replace("&", "&amp;")
 
 def translate_to_amharic(text):
     if not text:
         return ""
     try:
+        # አስቀድሞ የሚታወቁ ቃላቶችን ማስተካከል
+        for en, am in SPORTS_GLOSSARY.items():
+            text = text.replace(en, am)
+
         translated = GoogleTranslator(source='auto', target='am').translate(text)
-        return clean_text(translated)
+        return sanitize_text(translated)
     except Exception as e:
-        print(f"የትርጉም ስህተት፡ {e}")
-        return clean_text(text)
+        print(f"⚠️ የትርጉም ስህተት: {e}")
+        return sanitize_text(text)
 
-# --- HELPER FUNCTIONS ---
-def load_sent_news():
-    if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return []
-    return []
 
-def save_sent_news(sent_list):
-    # እስከ 500 የሚደርሱ የተላኩ ሊንኮችን ብቻ ይዞ የፋይሉን መጠን ለመቀነስ
-    if len(sent_list) > 500:
-        sent_list = sent_list[-500:]
-    with open(DB_FILE, "w", encoding="utf-8") as f:
-        json.dump(sent_list, f, ensure_ascii=False, indent=2)
-
+# --- TELEGRAM POSTING ---
 def send_telegram_post(caption, image_url=None):
     if not TELEGRAM_BOT_TOKEN:
-        print("⚠️ BOT TOKEN ስለሌለ መልእክት መላክ አልተቻለም።")
+        print("❌ የቦት ቶከን አልተገኘም!")
         return False
 
     reply_markup = {
-        "inline_keyboard": [[{"text": "📢 ቻናላችንን ይቀላቀሉ (Join)", "url": CHANNEL_LINK}]]
+        "inline_keyboard": [[{"text": "📢 ቻናላችንን ይቀላቀሉ", "url": CHANNEL_LINK}]]
     }
-    
+
+    # 1. ምስል ካለው በፎቶ መልኩ ይልካል
     if image_url:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-        payload = {
+        photo_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+        photo_payload = {
             "chat_id": TELEGRAM_CHANNEL_ID,
             "photo": image_url,
-            "caption": caption,
+            "caption": caption[:1024],  # ለፎቶ Caption ገደቡ 1024 ፊደል ነው
             "parse_mode": "HTML",
             "reply_markup": json.dumps(reply_markup)
         }
         try:
-            res = requests.post(url, data=payload, timeout=10)
+            res = session.post(photo_url, data=photo_payload, timeout=12)
             if res.status_code == 200:
                 return True
         except Exception as e:
-            print(f"ምስል ሲላክ ስህተት፡ {e}")
+            print(f"⚠️ ምስል መላክ አልተቻለም፡ {e}")
 
-    # ምስል ከሌለ ወይም ምስሉ ካልተላከ ፅሁፉን ብቻ ይልካል
-    url_text = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload_text = {
+    # 2. ምስል ከሌለ ወይም ፎቶው ካልሰራ በጽሁፍ ብቻ ይልካል
+    msg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    msg_payload = {
         "chat_id": TELEGRAM_CHANNEL_ID,
-        "text": caption,
+        "text": caption[:4096],  # ለጽሁፍ መልእክት ገደቡ 4096 ነው
         "parse_mode": "HTML",
         "reply_markup": json.dumps(reply_markup)
     }
-    res_text = requests.post(url_text, data=payload_text, timeout=10)
-    return res_text.status_code == 200
-
-
-# --- TRANSFER NEWS SCRAPER ---
-def fetch_transfer_news():
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     try:
-        response = requests.get(TRANSFER_NEWS_URL, headers=headers, timeout=10)
-        if response.status_code != 200: 
-            return
+        res = session.post(msg_url, data=msg_payload, timeout=12)
+        return res.status_code == 200
+    except Exception as e:
+        print(f"❌ መልእክት መላክ አልተቻለም: {e}")
+        return False
 
-        soup = BeautifulSoup(response.content, "xml")
+
+# --- RSS FEED PROCESSOR ---
+def process_feed(feed_url, is_transfer=False):
+    """ከአንድ RSS feed አዲስ ዜና አምጥቶ ይለጥፋል"""
+    sent_news = load_sent_news()
+    try:
+        res = session.get(feed_url, timeout=10)
+        if res.status_code != 200:
+            return False
+
+        soup = BeautifulSoup(res.content, "xml")
         items = soup.find_all("item")
-        sent_news = load_sent_news()
 
-        for item in items[:1]:  # በየሩጫው ቢበዛ 1 የዝውውር ዜና ብቻ እንዲልክ
+        # የቅርብ 10 ዜናዎችን ብቻ ይመረምራል
+        for item in items[:10]:
             title_tag = item.find("title")
             link_tag = item.find("guid") or item.find("link")
             desc_tag = item.find("description")
 
             title_en = title_tag.get_text(strip=True) if title_tag else ""
             link = link_tag.get_text(strip=True) if link_tag else ""
-            description_en = desc_tag.get_text(strip=True) if desc_tag else ""
+            desc_en = desc_tag.get_text(strip=True) if desc_tag else ""
 
-            if not link or len(title_en) < 10: 
+            if not link or len(title_en) < 10 or link in sent_news:
                 continue
 
-            if link not in sent_news:
-                title_am = translate_to_amharic(title_en)
-                content_am = translate_to_amharic(description_en)
+            # ምስል ማውጣት
+            image_url = None
+            media = item.find("media:thumbnail") or item.find("media:content") or item.find("enclosure")
+            if media and media.get("url"):
+                image_url = media["url"]
 
-                caption = (
-                    f"🔄 <b>የተጫዋቾች ዝውውር እና ጭምጭምታዎች</b>\n\n"
-                    f"📌 <b>{title_am}</b>\n\n"
-                    f"{content_am}\n\n"
-                    f"─────────────────\n"
-                    f"🏆 <i>Mela World Sports</i>"
-                )
-                
-                success = send_telegram_post(caption)
-                if success:
-                    print(f"✅ የዝውውር ዜና ተልኳል: {title_en}")
-                    sent_news.append(link)
-                    save_sent_news(sent_news)
-                    break
+            # ወደ አማርኛ መተርጎም
+            title_am = translate_to_amharic(title_en)
+            content_am = translate_to_amharic(desc_en)
+
+            if len(content_am) > 650:
+                content_am = content_am[:650] + "..."
+
+            # የመልእክት ቅርጸት (Template)
+            header = "🔄 <b>የተጫዋቾች ዝውውር መረጃ</b>" if is_transfer else "🔥 <b>ትኩስ የስፖርት ዜና</b>"
+            caption = (
+                f"{header}\n\n"
+                f"📌 <b>{title_am}</b>\n\n"
+                f"{content_am}\n\n"
+                f"─────────────────\n"
+                f"🏆 <i>Mela World Sports</i>"
+            )
+
+            if send_telegram_post(caption, image_url):
+                print(f"✅ ተልኳል: {title_en}")
+                sent_news.add(link)
+                save_sent_news(sent_news)
+                return True
+
     except Exception as e:
-        print(f"የዝውውር ዜና ሲሰበሰብ ስህተት ተከሰተ: {e}")
+        print(f"⚠️ ስህተት ከ {feed_url} ሲሰበሰብ: {e}")
+
+    return False
 
 
-# --- MAIN MULTI-SPORT SCRAPER ---
-def scrape_and_post():
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    sent_news = load_sent_news()
-    posts_sent_this_run = 0
+# --- MAIN RUNNER ---
+def run():
+    print("🚀 ቦቱ ስራ ጀምሯል...")
 
-    # ምንጮቹን በዘፈቀደ በማደባለቅ ከተለያዩ የስፖርት አይነቶች ዜናዎች እንዲመጡ ይደረጋል
-    shuffled_urls = NEWS_URLS.copy()
-    random.shuffle(shuffled_urls)
+    # 1. አጠቃላይ ዜናዎችን ማሰራጨት (ቢበዛ 2 ወይም 3 ዜና)
+    general_feeds = NEWS_FEEDS["GENERAL"].copy()
+    random.shuffle(general_feeds)
+    posted_count = 0
 
-    for feed_url in shuffled_urls:
-        if posts_sent_this_run >= 3:  # በአንድ ጊዜ ከ3 አጠቃላይ ዜና በላይ እንዳይልክ
+    for feed in general_feeds:
+        if posted_count >= 2:
             break
-            
-        try:
-            response = requests.get(feed_url, headers=headers, timeout=10)
-            if response.status_code != 200: 
-                continue
+        if process_feed(feed, is_transfer=False):
+            posted_count += 1
 
-            soup = BeautifulSoup(response.content, "xml")
-            items = soup.find_all("item")
+    # 2. የዝውውር ዜና ማሰራጨት (1 ዜና)
+    for feed in NEWS_FEEDS["TRANSFER"]:
+        if process_feed(feed, is_transfer=True):
+            break
 
-            # ዜናዎቹን በዘፈቀደ ማውጣት
-            random.shuffle(items)
-
-            for item in items:
-                title_tag = item.find("title")
-                link_tag = item.find("guid") or item.find("link")
-                desc_tag = item.find("description")
-
-                title_en = title_tag.get_text(strip=True) if title_tag else ""
-                link = link_tag.get_text(strip=True) if link_tag else ""
-                description_en = desc_tag.get_text(strip=True) if desc_tag else ""
-                
-                image_url = None
-                media_thumb = item.find("media:thumbnail") or item.find("media:content") or item.find("enclosure")
-                if media_thumb and media_thumb.get("url"):
-                    image_url = media_thumb["url"]
-
-                if not link or len(title_en) < 10: 
-                    continue
-
-                if link not in sent_news:
-                    title_am = translate_to_amharic(title_en)
-                    content_am = translate_to_amharic(description_en)
-                    
-                    caption_limit = 700
-                    if len(content_am) > caption_limit:
-                        content_am = content_am[:caption_limit] + "..."
-
-                    caption = (
-                        f"🔥 <b>ትኩስ የስፖርት ዜና</b>\n\n"
-                        f"🏆 <b>{title_am}</b>\n\n"
-                        f"{content_am}\n\n"
-                        f"─────────────────\n"
-                        f"📌 <i>ለፈጣን መረጃ ቻናላችንን ይቀላቀሉ!</i>"
-                    )
-                    
-                    success = send_telegram_post(caption, image_url)
-                    
-                    if success:
-                        print(f"✅ አጠቃላይ የስፖርት ዜና ተልኳል: {title_en}")
-                        sent_news.append(link)
-                        save_sent_news(sent_news)
-                        posts_sent_this_run += 1
-                        break  # ከአንድ ምንጭ 1 ዜና እንደላከ ወደ ቀጣዩ ምንጭ ይሻገራል
-                        
-        except Exception as e:
-            print(f"ከ {feed_url} መረጃ ማውጣት አልተቻለም: {e}")
+    print("🏁 ስራው ተጠናቋል!")
 
 if __name__ == "__main__":
-    print("🚀 ቦቱ ስራ ጀምሯል...")
-    
-    # 1. አጠቃላይ የስፖርት ዜናዎችን ያመጣል (እግር ኳስ፣ ባስኬትቦል፣ ቴኒስ፣ ወዘተ)
-    scrape_and_post()       
-    
-    # 2. የዝውውር ዜና (በምጣኔ ይላካል)
-    fetch_transfer_news()
+    run()
